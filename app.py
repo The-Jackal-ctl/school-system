@@ -126,10 +126,10 @@ def init_db():
         )
     """)
 
-    # STUDENTS
+    # PUPILS
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS students (
-            student_id TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS pupils (
+            pupil_id TEXT PRIMARY KEY,
             full_name TEXT NOT NULL,
             class TEXT NOT NULL,
             photo_path TEXT DEFAULT 'default_avatar.png',
@@ -155,21 +155,21 @@ def init_db():
         )
     """)
     cursor.execute("""
-        ALTER TABLE students
+        ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS face_descriptor TEXT;""")
     cursor.execute("""
-        ALTER TABLE students
+        ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS programme TEXT
     """)
     cursor.execute("""
-        ALTER TABLE students
+        ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS signature_filename VARCHAR(255);
     """)
 
-    cursor.execute("""ALTER TABLE students
+    cursor.execute("""ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS qr_token TEXT UNIQUE;""")
     cursor.execute("""
-        ALTER TABLE students
+        ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS residence TEXT
     """)
     # STAFF
@@ -265,7 +265,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS marks (
             id SERIAL PRIMARY KEY,
-            student_id TEXT,
+            pupil_id TEXT,
             subject TEXT,
             term TEXT,
             year INTEGER,
@@ -290,10 +290,10 @@ def init_db():
             paper2 NUMERIC,
             points INTEGER,
 
-            FOREIGN KEY(student_id)
-                REFERENCES students(student_id),
+            FOREIGN KEY(pupil_id)
+                REFERENCES pupils(pupil_id),
 
-            UNIQUE(student_id, subject, term, year)
+            UNIQUE(pupil_id, subject, term, year)
         )
     """)
     cursor.execute("""
@@ -307,7 +307,7 @@ def init_db():
     
             prn VARCHAR(10) NOT NULL UNIQUE,
     
-            student_id TEXT NOT NULL,
+            pupil_id TEXT NOT NULL,
     
             amount NUMERIC(12,2) NOT NULL,
     
@@ -329,9 +329,9 @@ def init_db():
     
             paid_at TIMESTAMP,
     
-            CONSTRAINT fee_payment_requests_student_fk
-                FOREIGN KEY (student_id)
-                REFERENCES students(student_id)
+            CONSTRAINT fee_payment_requests_pupil_fk
+                FOREIGN KEY (pupil_id)
+                REFERENCES pupils(pupil_id)
                 ON DELETE CASCADE,
     
             CONSTRAINT fee_payment_requests_prn_format
@@ -341,23 +341,7 @@ def init_db():
                 CHECK (amount > 0)
         )
     """)
-    # ATTENDANCE
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS attendance (
-            id SERIAL PRIMARY KEY,
-            student_id TEXT,
-            date DATE,
-            status TEXT,
-
-            FOREIGN KEY(student_id)
-                REFERENCES students(student_id),
-
-            UNIQUE(student_id, date)
-        )
-    """)
-
-
-    # SCHEDULES
+# SCHEDULES
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS schedules (
             id SERIAL PRIMARY KEY,
@@ -411,7 +395,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS teacher_comments (
             id SERIAL PRIMARY KEY,
-            student_id TEXT,
+            pupil_id TEXT,
             term TEXT,
             year INTEGER,
 
@@ -421,8 +405,8 @@ def init_db():
             class_teacher_comment_locked INTEGER DEFAULT 0,
             headteacher_comment_locked INTEGER DEFAULT 0,
 
-            FOREIGN KEY(student_id)
-                REFERENCES students(student_id)
+            FOREIGN KEY(pupil_id)
+                REFERENCES pupils(pupil_id)
         )
     """)
 
@@ -512,7 +496,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS payments (
             id SERIAL PRIMARY KEY,
 
-            student_id TEXT,
+            pupil_id TEXT,
             amount NUMERIC,
 
             payment_date DATE,
@@ -527,8 +511,8 @@ def init_db():
 
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-            FOREIGN KEY(student_id)
-                REFERENCES students(student_id)
+            FOREIGN KEY(pupil_id)
+                REFERENCES pupils(pupil_id)
         )
     """)
 
@@ -556,9 +540,9 @@ def init_db():
             year INTEGER
         )
     """)
-    # STUDENT FEE STRUCTURE
+    # PUPIL FEE STRUCTURE
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS student_fee_structure (
+        CREATE TABLE IF NOT EXISTS pupil_fee_structure (
             id SERIAL PRIMARY KEY,
     
             level TEXT NOT NULL,
@@ -751,7 +735,7 @@ def init_db():
 
            id SERIAL PRIMARY KEY,
 
-           student_id TEXT,
+           pupil_id TEXT,
 
            prn TEXT UNIQUE,
 
@@ -761,8 +745,8 @@ def init_db():
 
            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-           FOREIGN KEY(student_id)
-           REFERENCES students(student_id)
+           FOREIGN KEY(pupil_id)
+           REFERENCES pupils(pupil_id)
 
     ) """)
 
@@ -779,12 +763,12 @@ def init_db():
         )
     """)
 
-    # STUDENT CLEARANCE
+    # PUPIL CLEARANCE
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS student_clearance (
+        CREATE TABLE IF NOT EXISTS pupil_clearance (
             id SERIAL PRIMARY KEY,
     
-            student_id TEXT NOT NULL,
+            pupil_id TEXT NOT NULL,
     
             clearance_status TEXT DEFAULT 'pending',
     
@@ -796,14 +780,14 @@ def init_db():
     
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-            FOREIGN KEY(student_id)
-                REFERENCES students(student_id)
+            FOREIGN KEY(pupil_id)
+                REFERENCES pupils(pupil_id)
                 ON DELETE CASCADE,
     
             FOREIGN KEY(cleared_by)
                 REFERENCES users(id),
     
-            UNIQUE(student_id)
+            UNIQUE(pupil_id)
         )
     """)
     # SPORTS ACTIVITIES
@@ -827,7 +811,7 @@ def init_db():
 
             phone_number TEXT,
 
-            student_id TEXT,
+            pupil_id TEXT,
 
             reference TEXT,
 
@@ -894,8 +878,8 @@ def init_db():
                 REFERENCES staff(id)
         )
     """)
-    cursor.execute("""ALTER TABLE students
-        ADD COLUMN IF NOT EXISTS student_signature TEXT;""")
+    cursor.execute("""ALTER TABLE pupils
+        ADD COLUMN IF NOT EXISTS pupil_signature TEXT;""")
     cursor.execute("""
         ALTER TABLE school_settings
         ADD COLUMN IF NOT EXISTS current_term VARCHAR(20) DEFAULT 'Term 1'
@@ -912,23 +896,14 @@ def init_db():
         WHERE id = 1
           AND current_year IS NULL
     """)
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_in TIMESTAMP NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_out TIMESTAMP NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_in_method TEXT NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_out_method TEXT NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_in_device TEXT NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS clock_out_device TEXT NULL;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;""")
-    cursor.execute("""ALTER TABLE attendance
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;""")
-    # AUTHORIZATION LOGS
+
+
+
+
+
+
+
+# AUTHORIZATION LOGS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS authorization_logs (
             id SERIAL PRIMARY KEY,
@@ -1046,12 +1021,9 @@ def init_db():
             VALUES (%s)
             """,
             [
-                ('Senior 1',),
-                ('Senior 2',),
-                ('Senior 3',),
-                ('Senior 4',),
-                ('Senior 5',),
-                ('Senior 6',)
+                ('Baby Class',), ('Middle Class',), ('Top Class',),
+                ('Primary 1',), ('Primary 2',), ('Primary 3',),
+                ('Primary 4',), ('Primary 5',), ('Primary 6',), ('Primary 7',)
             ]
         )
 
@@ -1074,22 +1046,11 @@ def init_db():
             VALUES (%s,%s)
             """,
             [
-                ('ENGLISH LANGUAGE','ENG'),
-                ('MATHEMATICS','MTC'),
-                ('BIOLOGY','BIO'),
-                ('CHEMISTRY','CHE'),
-                ('PHYSICS','PHY'),
-                ('HISTORY','HIS'),
-                ('GEOGRAPHY','GEO'),
-                ('CHRISTIAN RELIGIOUS DEDUCATION','CRE'),
-                ('Islamic Religious Education','IRE'),
-                ('AGRICULTURE','AGR'),
-                ('Commerce','COM'),
-                ('ENTREPRENUERSHIP','ENT'),
-                ('INFORMATION AND COMMUNICATION TECHNOLOGY','ICT'),
-                ('LITERATURE IN ENGLISH','LIT'),
-                ('ART AND DESIGN','ART'),
-                ('Kiswahili','KIS')
+                ('ENGLISH', 'ENG'), ('MATHEMATICS', 'MTC'),
+                ('SCIENCE', 'SCI'), ('SOCIAL STUDIES', 'SST'),
+                ('LITERACY', 'LIT'), ('RELIGIOUS EDUCATION', 'RE'),
+                ('PHYSICAL EDUCATION', 'PE'), ('ART AND CRAFT', 'ART'),
+                ('LOCAL LANGUAGE', 'LL')
             ]
         )
 
@@ -1509,7 +1470,7 @@ def get_alevel_class_teacher_comment(total_points):
 
     else:
         return (
-            "The student needs significant improvement"
+            "The pupil needs significant improvement"
         )
 
 
@@ -1542,7 +1503,7 @@ def get_alevel_headteacher_comment(total_points):
 
     else:
         return (
-            "The student needs considerable improvement and greater "
+            "The pupil needs considerable improvement and greater "
             "commitment to academic work"
         )
 
@@ -1575,7 +1536,7 @@ def get_olevel_class_teacher_comment(general_identifier):
 
     else:
         return (
-            "The student needs significant improvement"
+            "The pupil needs significant improvement"
         )
 
 
@@ -1608,7 +1569,7 @@ def get_olevel_headteacher_comment(general_identifier):
 
     else:
         return (
-            "The student needs significant improvement and greater "
+            "The pupil needs significant improvement and greater "
             "commitment to academic work"
         )
 
@@ -1708,10 +1669,10 @@ def generate_fee_prn():
         if not exists:
             return prn    
 
-def teacher_has_class_access(user_id, student_class, assignment_type=None):
+def teacher_has_class_access(user_id, pupil_class, assignment_type=None):
     """
     Checks whether a teacher has access to a particular
-    student class/stream.
+    pupil class/stream.
 
     Rules:
 
@@ -1722,12 +1683,12 @@ def teacher_has_class_access(user_id, student_class, assignment_type=None):
         Assignment S.1C -> S.1C only
     """
 
-    if not user_id or not student_class:
+    if not user_id or not pupil_class:
         return False
 
     assignments = get_user_assignments(user_id)
 
-    student_class = student_class.strip().upper()
+    pupil_class = pupil_class.strip().upper()
 
     for assignment in assignments:
 
@@ -1745,7 +1706,7 @@ def teacher_has_class_access(user_id, student_class, assignment_type=None):
             continue
 
         # Exact stream/class match
-        if student_class == assigned_class:
+        if pupil_class == assigned_class:
             return True
 
         # Main class assignment covers all its streams
@@ -1757,7 +1718,7 @@ def teacher_has_class_access(user_id, student_class, assignment_type=None):
         # S.1B does NOT cover S.1A.
         if re.match(
             r'^' + re.escape(assigned_class) + r'[A-Z]+$',
-            student_class
+            pupil_class
         ):
             return True
 
@@ -1769,7 +1730,7 @@ def get_teacher_accessible_classes(user_id=None, assignment_type=None):
     Assignments are kept at the main-class level where possible,
     e.g. S.1, S.2, S.3.
 
-    The actual students can still be stored as S.1A, S.1B, etc.
+    The actual pupils can still be stored as S.1A, S.1B, etc.
     """
 
     return get_user_classes(
@@ -1846,25 +1807,27 @@ def generate_voucher_no():
 
     return f"{prefix}-{next_num:04d}"
 
-def get_student_level(class_name):
+def get_pupil_level(class_name):
+    """Return the nursery/primary level for a class name."""
     if not class_name:
         return None
 
-    class_name = class_name.strip().upper()
-
-    match = re.match(r'^(S\.[1-6])', class_name)
-
-    if match:
-        return match.group(1)
-
-    return None
+    normalized = re.sub(r'\s+', ' ', class_name.strip()).casefold()
+    allowed_levels = {
+        'baby class': 'Baby Class',
+        'middle class': 'Middle Class',
+        'top class': 'Top Class',
+        **{f'primary {n}': f'Primary {n}' for n in range(1, 8)},
+        **{f'p{n}': f'Primary {n}' for n in range(1, 8)},
+    }
+    return allowed_levels.get(normalized)
 
 # =========================================================
-# APPLY STUDENT FEE STRUCTURE
+# APPLY PUPIL FEE STRUCTURE
 # =========================================================
 
-def apply_student_fee_structure(
-    student_id,
+def apply_pupil_fee_structure(
+    pupil_id,
     term='Term 1',
     year=None
 ):
@@ -1878,91 +1841,52 @@ def apply_student_fee_structure(
     try:
 
         # =================================================
-        # GET STUDENT
+        # GET PUPIL
         # =================================================
 
         cur.execute("""
             SELECT
-                student_id,
+                pupil_id,
                 class,
                 programme,
                 residence
-            FROM students
-            WHERE student_id = %s
+            FROM pupils
+            WHERE pupil_id = %s
         """, (
-            student_id,
+            pupil_id,
         ))
 
-        student = cur.fetchone()
+        pupil = cur.fetchone()
 
-        if not student:
-            return False, 'Student not found.'
+        if not pupil:
+            return False, 'Pupil not found.'
 
         # =================================================
         # DETERMINE LEVEL
         # =================================================
 
-        level = get_student_level(
-            student['class']
+        level = get_pupil_level(
+            pupil['class']
         )
 
         if not level:
 
             return False, (
                 f"Could not determine level from "
-                f"class {student['class']}."
+                f"class {pupil['class']}."
             )
 
-        programme = (
-            student['programme'] or ''
-        ).strip()
+        # Primary-school fees use one general programme. Keep the
+        # existing database columns so older installations can migrate
+        # without a destructive schema change.
+        programme = (pupil['programme'] or 'General').strip() or 'General'
+        residence = (pupil['residence'] or 'Day').strip() or 'Day'
 
-        residence = (
-            student['residence'] or ''
-        ).strip()
+        if programme not in ('General', 'Day', 'Boarding'):
+            programme = 'General'
 
-        # =================================================
-        # CHECK PROGRAMME
-        # =================================================
-
-        if level in [
-            'S.1',
-            'S.2',
-            'S.3',
-            'S.4'
-        ]:
-
-            valid_programmes = [
-                'USE',
-                'Non-USE'
-            ]
-
-        else:
-
-            valid_programmes = [
-                'UPOLET',
-                'Non-UPOLET'
-            ]
-
-        if programme not in valid_programmes:
-
-            return False, (
-                f"Invalid or missing programme "
-                f"for {level}."
-            )
-
-        # =================================================
-        # CHECK RESIDENCE
-        # =================================================
-
-        if residence not in [
-            'Day',
-            'Boarding'
-        ]:
-
-            return False, (
-                'Invalid or missing residence.'
-            )
+        if residence not in ('Day', 'Boarding'):
+            residence = 'Day'
 
         # =================================================
         # FIND FEE STRUCTURE
@@ -1971,7 +1895,7 @@ def apply_student_fee_structure(
         cur.execute("""
             SELECT
                 amount
-            FROM student_fee_structure
+            FROM pupil_fee_structure
             WHERE level = %s
             AND programme = %s
             AND residence = %s
@@ -2010,9 +1934,9 @@ def apply_student_fee_structure(
                     0
                 ) AS total_paid
             FROM payments
-            WHERE student_id = %s
+            WHERE pupil_id = %s
         """, (
-            student_id,
+            pupil_id,
         ))
 
         payment = cur.fetchone()
@@ -2027,21 +1951,21 @@ def apply_student_fee_structure(
         )
 
         # =================================================
-        # UPDATE STUDENT
+        # UPDATE PUPIL
         # =================================================
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET
                 fees_total = %s,
                 fees_paid = %s,
                 fees_balance = %s
-            WHERE student_id = %s
+            WHERE pupil_id = %s
         """, (
             fees_total,
             fees_paid,
             fees_balance,
-            student_id
+            pupil_id
         ))
 
         db.commit()
@@ -2815,8 +2739,8 @@ def determine_admission_worth(results):
     qualifies = (results.get('average', 0) >= min_average and results.get('english', 0) >= min_english and results.get('math', 0) >= min_math)
     return {'qualifies': qualifies, 'average': results.get('average', 0), 'message': 'Congratulations! You qualify.' if qualifies else 'Sorry, you do not meet requirements.'}
 
-def generate_admission_letter(student):
-    return f"""<!DOCTYPE html><html><head><title>Admission Letter</title></head><body><h2>Admission Letter</h2><p>Dear {student['full_name']},</p><p>You have been admitted.</p></body></html>"""
+def generate_admission_letter(pupil):
+    return f"""<!DOCTYPE html><html><head><title>Admission Letter</title></head><body><h2>Admission Letter</h2><p>Dear {pupil['full_name']},</p><p>You have been admitted.</p></body></html>"""
 
 @app.route('/admissions', methods=['GET', 'POST'])
 def admissions_portal():
@@ -2851,8 +2775,8 @@ def admissions_portal():
 
         if photo and photo.filename:
             ext = photo.filename.rsplit('.', 1)[1].lower()
-            student_id_temp = f"TEMP-{int(datetime.now().timestamp())}"
-            photo_filename = f"{student_id_temp}.{ext}"
+            pupil_id_temp = f"TEMP-{int(datetime.now().timestamp())}"
+            photo_filename = f"{pupil_id_temp}.{ext}"
             photo.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
 
         results_file = request.files.get('results_pdf')
@@ -2938,11 +2862,11 @@ def admission_payment():
                 'reference': transaction_ref
             }
 
-            temp_student_id = f"TEMP-{int(datetime.now().timestamp())}"
+            temp_pupil_id = f"TEMP-{int(datetime.now().timestamp())}"
 
             execute_db("""
-                INSERT INTO students (
-                    student_id,
+                INSERT INTO pupils (
+                    pupil_id,
                     full_name,
                     class,
                     parent_phone,
@@ -2961,7 +2885,7 @@ def admission_payment():
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'online','pending','pending',%s)
             """,
             (
-                temp_student_id,
+                temp_pupil_id,
                 admission_data['full_name'],
                 'Pending',
                 admission_data.get('phone'),
@@ -2989,7 +2913,7 @@ def admission_payment():
     return render_template(
         'admissions/payment.html',
         amount=amount,
-        student_name=admission_data['full_name']
+        pupil_name=admission_data['full_name']
     )
 
 
@@ -3003,7 +2927,7 @@ def admission_payment_status(transaction_id):
         cur = get_db().cursor()
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET payment_status='completed',
                 payment_date=CURRENT_TIMESTAMP,
                 admission_status='pending'
@@ -3044,8 +2968,8 @@ def admission_submitted():
     )
 # ==================== DOS MODULE ====================
 SCHOOL_ABBR = "ASS"
-def generate_student_id():
-    return generate_unique_number(SCHOOL_ABBR, 'students', 'student_id', year_format=True)
+def generate_pupil_id():
+    return generate_unique_number(SCHOOL_ABBR, 'pupils', 'pupil_id', year_format=True)
 
 # ==================== DOS ADMISSION MANAGEMENT ====================
 @app.route('/school/report_settings', methods=['GET', 'POST'])
@@ -3140,7 +3064,7 @@ def school_report_settings():
         current_term=current_term,
         current_year=current_year
     )
-@app.route('/dos/admit_student', methods=['GET', 'POST'])
+@app.route('/dos/admit_pupil', methods=['GET', 'POST'])
 def dos_admit():
     if not check_permission(['dos']):
         abort(403)
@@ -3176,37 +3100,37 @@ def dos_admit():
         if date_of_birth:
             birth_date = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
             age = calculate_age(birth_date)
-        student_id = generate_student_id()
+        pupil_id = generate_pupil_id()
         qr_token = generate_qr_token()
 
         photo_filename = "default_avatar.png"
         if photo and photo.filename and allowed_file(photo.filename, ALLOWED_IMAGE_EXTENSIONS):
             ext = photo.filename.rsplit('.', 1)[1].lower()
-            photo_filename = f"{student_id}.{ext}"
+            photo_filename = f"{pupil_id}.{ext}"
             photo.save(
                 os.path.join(app.config['UPLOAD_FOLDER'], photo_filename)
             )
         
-        # ================= SAVE STUDENT SIGNATURE (OPTIONAL) =================
-        student_signature_file = request.files.get('student_signature')
+        # ================= SAVE PUPIL SIGNATURE (OPTIONAL) =================
+        pupil_signature_file = request.files.get('pupil_signature')
         
         signature_filename = None
         
         if (
-            student_signature_file
-            and student_signature_file.filename
+            pupil_signature_file
+            and pupil_signature_file.filename
             and allowed_file(
-                student_signature_file.filename,
+                pupil_signature_file.filename,
                 ALLOWED_IMAGE_EXTENSIONS
             )
         ):
             signature_ext = (
-                student_signature_file.filename.rsplit('.', 1)[1].lower()
+                pupil_signature_file.filename.rsplit('.', 1)[1].lower()
             )
         
-            signature_filename = f"student_signature_{student_id}.{signature_ext}"
+            signature_filename = f"pupil_signature_{pupil_id}.{signature_ext}"
         
-            student_signature_file.save(
+            pupil_signature_file.save(
                 os.path.join(
                     app.config['UPLOAD_FOLDER'],
                     signature_filename
@@ -3215,9 +3139,9 @@ def dos_admit():
         try:
             execute_db(
                 """
-                INSERT INTO students
+                INSERT INTO pupils
                 (
-                    student_id, qr_token,
+                    pupil_id, qr_token,
                     full_name,
                     class,
                     photo_path,signature_filename,
@@ -3246,7 +3170,7 @@ def dos_admit():
                 )
                 """,
                 (
-                    student_id, qr_token,
+                    pupil_id, qr_token,
                     full_name,
                     class_name,
                     photo_filename, signature_filename,
@@ -3262,7 +3186,7 @@ def dos_admit():
             )
 
             flash(
-                f'Student {full_name} admitted with ID {student_id}.',
+                f'Pupil {full_name} admitted with ID {pupil_id}.',
                 'success'
             )
 
@@ -3272,7 +3196,7 @@ def dos_admit():
         return redirect(url_for('dos_admit'))
 
     return render_template(
-        'dos/admit_student.html',
+        'dos/admit_pupil.html',
         houses=houses,
         sports=sports
     )
@@ -3337,11 +3261,11 @@ def dos_admission_settings():
     cur.execute(
         """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             lin,
             application_date
-        FROM students
+        FROM pupils
         WHERE admission_source='online'
         AND admission_status='pending'
         ORDER BY application_date DESC
@@ -3420,7 +3344,7 @@ def dos_pending_admissions():
 
     cur.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             sex,
             age,
@@ -3428,10 +3352,10 @@ def dos_pending_admissions():
             admission_status,
             payment_status,
             admission_source
-        FROM students
+        FROM pupils
         WHERE admission_source='online'
           AND admission_status='pending'
-        ORDER BY student_id DESC
+        ORDER BY pupil_id DESC
     """)
 
     applications = cur.fetchall()
@@ -3443,9 +3367,9 @@ def dos_pending_admissions():
         applications=applications
     )
     
-@app.route('/dos/approve_admission/<student_id>', methods=['GET','POST'])
+@app.route('/dos/approve_admission/<pupil_id>', methods=['GET','POST'])
 @login_required
-def approve_admission(student_id):
+def approve_admission(pupil_id):
 
     if not check_permission(['dos','admin']):
         abort(403)
@@ -3456,15 +3380,15 @@ def approve_admission(student_id):
     # Get applicant
     cur.execute("""
         SELECT *
-        FROM students
-        WHERE student_id=%s
-    """,(student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """,(pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         cur.close()
-        flash("Student application not found.", "danger")
+        flash("Pupil application not found.", "danger")
         return redirect(url_for('dos_pending_admissions'))
 
 
@@ -3478,12 +3402,12 @@ def approve_admission(student_id):
             return redirect(request.url)
 
 
-        new_student_id = generate_student_id()
+        new_pupil_id = generate_pupil_id()
 
 
         cur.execute("""
-            INSERT INTO students(
-                student_id,
+            INSERT INTO pupils(
+                pupil_id,
                 full_name,
                 class,
                 photo_path,
@@ -3517,31 +3441,31 @@ def approve_admission(student_id):
             )
         """,
         (
-            new_student_id,
-            student['full_name'],
+            new_pupil_id,
+            pupil['full_name'],
             assigned_class,
-            student['photo_path'],
-            student['fees_paid'],
-            student['fees_balance'],
-            student['fees_total'],
-            student['parent_phone'],
-            student['date_of_birth'],
-            student['age'],
-            student['sex'],
-            student['preferred_house'],
-            student['disability'],
-            student['sports_activities'],
-            student['lin'],
-            student['payment_transaction_id'],
-            student['payment_date']
+            pupil['photo_path'],
+            pupil['fees_paid'],
+            pupil['fees_balance'],
+            pupil['fees_total'],
+            pupil['parent_phone'],
+            pupil['date_of_birth'],
+            pupil['age'],
+            pupil['sex'],
+            pupil['preferred_house'],
+            pupil['disability'],
+            pupil['sports_activities'],
+            pupil['lin'],
+            pupil['payment_transaction_id'],
+            pupil['payment_date']
         ))
 
 
         # Delete temporary application
         cur.execute("""
-            DELETE FROM students
-            WHERE student_id=%s
-        """,(student_id,))
+            DELETE FROM pupils
+            WHERE pupil_id=%s
+        """,(pupil_id,))
 
 
         db.commit()
@@ -3549,7 +3473,7 @@ def approve_admission(student_id):
 
 
         flash(
-            f"Student approved. New ID: {new_student_id}",
+            f"Pupil approved. New ID: {new_pupil_id}",
             "success"
         )
 
@@ -3570,15 +3494,15 @@ def approve_admission(student_id):
 
     return render_template(
         'dos/approve_admission.html',
-        student=student,
+        pupil=pupil,
         classes=classes
     )
 
 # ==================== REJECT ONLINE ADMISSION ====================
 
-@app.route('/dos/reject_admission/<student_id>')
+@app.route('/dos/reject_admission/<pupil_id>')
 @login_required
-def reject_admission(student_id):
+def reject_admission(pupil_id):
 
     if not check_permission(['dos','admin']):
         abort(403)
@@ -3589,23 +3513,23 @@ def reject_admission(student_id):
     # Check applicant exists
     cur.execute("""
         SELECT full_name, admission_status
-        FROM students
-        WHERE student_id=%s
-    """,(student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """,(pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
 
-    if not student:
+    if not pupil:
         cur.close()
-        flash("Student application not found.", "danger")
+        flash("Pupil application not found.", "danger")
         return redirect(url_for('dos_pending_admissions'))
     # Update status
     cur.execute("""
-        UPDATE students
+        UPDATE pupils
         SET admission_status='rejected'
-        WHERE student_id=%s
-    """,(student_id,))
+        WHERE pupil_id=%s
+    """,(pupil_id,))
 
 
     db.commit()
@@ -3613,37 +3537,37 @@ def reject_admission(student_id):
 
 
     flash(
-        f"Admission application for {student['full_name']} rejected.",
+        f"Admission application for {pupil['full_name']} rejected.",
         "warning"
     )
     return redirect(url_for('dos_pending_admissions'))
 # ==================== ADMISSION LETTER ====================
 
-@app.route('/admission_letter/<student_id>')
+@app.route('/admission_letter/<pupil_id>')
 @login_required
-def admission_letter(student_id):
+def admission_letter(pupil_id):
     cur = get_db().cursor()
     cur.execute("""
         SELECT 
-            student_id,
+            pupil_id,
             full_name,
             class,
             admission_date,
             preferred_house
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         AND admission_status='approved'
-    """,(student_id,))
+    """,(pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
     cur.close()
-    if not student:
+    if not pupil:
         flash("Admission record not found.", "danger")
         return redirect(url_for('dashboard'))
     return render_template(
         'admissions/admission_letter.html',
-        student=student
+        pupil=pupil
     )
 
 @app.route('/dos/class_lists')
@@ -3662,7 +3586,7 @@ def dos_class_lists():
     cur.execute(
         """
         SELECT DISTINCT class
-        FROM students
+        FROM pupils
         WHERE class IS NOT NULL
         AND class != ''
         ORDER BY class
@@ -3676,7 +3600,7 @@ def dos_class_lists():
 
     query = """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             photo_path,
@@ -3686,7 +3610,7 @@ def dos_class_lists():
             preferred_house,
             lin,
             admission_source
-        FROM students
+        FROM pupils
         WHERE 1=1
     """
 
@@ -3699,7 +3623,7 @@ def dos_class_lists():
     if search:
         query += """
         AND (
-            student_id ILIKE %s
+            pupil_id ILIKE %s
             OR full_name ILIKE %s
         )
         """
@@ -3707,24 +3631,24 @@ def dos_class_lists():
         params.extend([pattern, pattern])
     query += " ORDER BY full_name"
     cur.execute(query, params)
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
-    for student in students:
-        student['photo_url'] = get_photo_url(
-            student.get('photo_path')
+    for pupil in pupils:
+        pupil['photo_url'] = get_photo_url(
+            pupil.get('photo_path')
         )
     cur.close()
     return render_template(
         'dos/class_lists.html',
         classes=classes,
-        students=students,
+        pupils=pupils,
         selected_class=class_filter,
         search=search,
         term=term
     )
 
-@app.route('/dos/enroll_face/<student_id>')
-def dos_enroll_face(student_id):
+@app.route('/dos/enroll_face/<pupil_id>')
+def dos_enroll_face(pupil_id):
 
     if not check_permission(['dos']):
         abort(403)
@@ -3735,32 +3659,32 @@ def dos_enroll_face(student_id):
     cur.execute(
         """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             photo_path,
             face_descriptor
-        FROM students
-        WHERE student_id = %s
+        FROM pupils
+        WHERE pupil_id = %s
         """,
-        (student_id,)
+        (pupil_id,)
     )
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
     cur.close()
 
-    if not student:
-        flash('Student not found.', 'danger')
+    if not pupil:
+        flash('Pupil not found.', 'danger')
         return redirect(url_for('dos_class_lists'))
 
-    student['photo_url'] = get_photo_url(
-        student.get('photo_path')
+    pupil['photo_url'] = get_photo_url(
+        pupil.get('photo_path')
     )
 
     return render_template(
         'dos/enroll_face.html',
-        student=student
+        pupil=pupil
     )
 # ==================== DOS TEACHER ASSIGNMENTS ====================
 
@@ -3913,9 +3837,9 @@ def dos_teacher_assignments():
     teachers = cur.fetchall()
 
     # =========================================================
-    # GET STUDENT CLASSES
+    # GET PUPIL CLASSES
     #
-    # Students are stored as:
+    # Pupils are stored as:
     #
     # S.1A
     # S.1B
@@ -3935,29 +3859,29 @@ def dos_teacher_assignments():
     cur.execute(
         """
         SELECT DISTINCT class
-        FROM students
+        FROM pupils
         WHERE class IS NOT NULL
           AND TRIM(class) <> ''
         ORDER BY class
         """
     )
 
-    student_class_rows = cur.fetchall()
+    pupil_class_rows = cur.fetchall()
 
     main_classes = set()
 
-    for row in student_class_rows:
+    for row in pupil_class_rows:
 
-        student_class = (
+        pupil_class = (
             row['class']
             if isinstance(row, dict)
             else row[0]
         )
 
-        if not student_class:
+        if not pupil_class:
             continue
 
-        student_class = student_class.strip().upper()
+        pupil_class = pupil_class.strip().upper()
 
         # -----------------------------------------------------
         # Convert:
@@ -3969,12 +3893,12 @@ def dos_teacher_assignments():
         # If a class is already S.1, keep it as S.1.
         # -----------------------------------------------------
         if (
-            len(student_class) >= 4
-            and student_class[-1].isalpha()
+            len(pupil_class) >= 4
+            and pupil_class[-1].isalpha()
         ):
-            main_class = student_class[:-1]
+            main_class = pupil_class[:-1]
         else:
-            main_class = student_class
+            main_class = pupil_class
 
         main_classes.add(main_class)
 
@@ -4140,10 +4064,10 @@ def dos_teacher_assignments():
         subject_teachers=subject_teachers,
         both_roles=both_roles
     )
-# ==================== REMOVE STUDENT ====================
+# ==================== REMOVE PUPIL ====================
 
-@app.route('/dos/remove_student/<student_id>', methods=['POST'])
-def dos_remove_student(student_id):
+@app.route('/dos/remove_pupil/<pupil_id>', methods=['POST'])
+def dos_remove_pupil(pupil_id):
 
     if not check_permission(['dos']):
         abort(403)
@@ -4154,10 +4078,10 @@ def dos_remove_student(student_id):
     cur.execute(
         """
         SELECT photo_path
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         """,
-        (student_id,)
+        (pupil_id,)
     )
 
     row = cur.fetchone()
@@ -4175,12 +4099,12 @@ def dos_remove_student(student_id):
             os.remove(path)
 
     execute_db(
-        "DELETE FROM students WHERE student_id=%s",
-        (student_id,)
+        "DELETE FROM pupils WHERE pupil_id=%s",
+        (pupil_id,)
     )
 
     flash(
-        f'Student {student_id} removed.',
+        f'Pupil {pupil_id} removed.',
         'success'
     )
 
@@ -4203,7 +4127,7 @@ def dos_promote():
     cur.execute(
         """
         SELECT DISTINCT class
-        FROM students
+        FROM pupils
         WHERE class IS NOT NULL
         AND class != ''
         ORDER BY class
@@ -4238,7 +4162,7 @@ def dos_promote():
 
         cur.execute(
             """
-            UPDATE students
+            UPDATE pupils
             SET class=%s
             WHERE class=%s
             """,
@@ -4253,7 +4177,7 @@ def dos_promote():
         db.commit()
 
         flash(
-            f'{count} students promoted from {from_class} to {to_class}.',
+            f'{count} pupils promoted from {from_class} to {to_class}.',
             'success'
         )
 
@@ -4266,40 +4190,6 @@ def dos_promote():
 
 
 # ==================== ATTENDANCE ====================
-
-@app.route('/dos/attendance')
-def dos_attendance():
-
-    if not check_permission(['dos']):
-        abort(403)
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT DISTINCT class
-        FROM students
-        WHERE class IS NOT NULL
-        AND class != ''
-        ORDER BY class
-        """
-    )
-
-    classes = [
-        row['class']
-        for row in cur.fetchall()
-    ]
-
-    cur.close()
-
-    return render_template(
-        'dos/attendance.html',
-        classes=classes
-    )
-
-
-# ==================== SCHEDULES ====================
 
 @app.route('/dos/schedules', methods=['GET', 'POST'])
 def dos_schedules():
@@ -5325,7 +5215,7 @@ def dos_edit_assignment(assignment_id):
 
     cur = db.cursor()
     cur.execute(
-        "SELECT DISTINCT class FROM students ORDER BY class"
+        "SELECT DISTINCT class FROM pupils ORDER BY class"
     )
 
     classes = cur.fetchall()
@@ -5338,10 +5228,10 @@ def dos_edit_assignment(assignment_id):
     )
     
 # ==================== UNIFIED TEACHER MODULE ====================
-# ==================== TEACHER STUDENTS ====================
+# ==================== TEACHER PUPILS ====================
 
-@app.route('/teacher/students')
-def teacher_students():
+@app.route('/teacher/pupils')
+def teacher_pupils():
     if not check_permission(['classteacher', 'subject_teacher']):
         abort(403)
 
@@ -5389,7 +5279,7 @@ def teacher_students():
             cur.execute(
                 """
                 SELECT DISTINCT class
-                FROM students
+                FROM pupils
                 WHERE class ~ %s
                 ORDER BY class
                 """,
@@ -5458,7 +5348,7 @@ def teacher_students():
         session['selected_class'] = selected_class
 
     # =========================================================
-    # GET STUDENTS
+    # GET PUPILS
     # =========================================================
     db = get_db_dict()
     cur = db.cursor()
@@ -5482,12 +5372,12 @@ def teacher_students():
         cur.execute(
             """
             SELECT
-                student_id,
+                pupil_id,
                 full_name,
                 photo_path,
                 parent_phone,
                 class
-            FROM students
+            FROM pupils
             WHERE class=%s OR class ~ %s
             ORDER BY class, full_name
             """,
@@ -5508,26 +5398,26 @@ def teacher_students():
         cur.execute(
             """
             SELECT
-                student_id,
+                pupil_id,
                 full_name,
                 photo_path,
                 parent_phone,
                 class
-            FROM students
+            FROM pupils
             WHERE class = %s
             ORDER BY full_name
             """,
             (selected_class,)
         )
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     # =========================================================
     # ADD PHOTO URL
     # =========================================================
-    for student in students:
-        student['photo_url'] = get_photo_url(
-            student.get('photo_path')
+    for pupil in pupils:
+        pupil['photo_url'] = get_photo_url(
+            pupil.get('photo_path')
         )
 
     cur.close()
@@ -5553,1141 +5443,14 @@ def teacher_students():
     # RETURN TEMPLATE
     # =========================================================
     return render_template(
-        'teacher/students.html',
-        students=students,
+        'teacher/pupils.html',
+        pupils=pupils,
         selected_class=selected_class,
         available_classes=available_classes,
         is_classteacher=is_classteacher,
         term=term
     )
     
-@app.route('/teacher/attendance', methods=['GET', 'POST'])
-def teacher_attendance():
-
-    if not check_permission(['classteacher']):
-        abort(403)
-
-    user_id = session.get('user_id')
-
-    selected_class = session.get('selected_class')
-
-    if not selected_class:
-        flash('No class selected.', 'danger')
-        return redirect(url_for('teacher_students'))
-
-    selected_class = selected_class.strip().upper()
-
-    # ---------------------------------------------------------
-    # VERIFY TEACHER ACCESS TO THIS CLASS
-    # ---------------------------------------------------------
-
-    if not teacher_has_class_access(
-        user_id,
-        selected_class,
-        assignment_type='classteacher'
-    ):
-        abort(403)
-
-    # ---------------------------------------------------------
-    # SELECT DATE
-    # ---------------------------------------------------------
-
-    selected_date = request.args.get(
-        'date',
-        datetime.now().strftime('%Y-%m-%d')
-    )
-
-    # ---------------------------------------------------------
-    # SEARCH STUDENT
-    # ---------------------------------------------------------
-
-    search_query = request.args.get(
-        'search',
-        ''
-    ).strip()
-
-    # ---------------------------------------------------------
-    # MANUAL ATTENDANCE UPDATE
-    # ---------------------------------------------------------
-
-    if request.method == 'POST':
-
-        selected_date = request.form.get('date')
-
-        if not selected_date:
-            flash('Attendance date is required.', 'danger')
-            return redirect(url_for('teacher_attendance'))
-
-        db = get_db_dict()
-        cur = db.cursor()
-
-        for key, value in request.form.items():
-
-            if not key.startswith('status_'):
-                continue
-
-            student_id = key.replace('status_', '', 1)
-
-            # -------------------------------------------------
-            # Verify student belongs to teacher's class
-            # -------------------------------------------------
-
-            cur.execute(
-                """
-                SELECT student_id, class
-                FROM students
-                WHERE student_id = %s
-                """,
-                (student_id,)
-            )
-
-            student = cur.fetchone()
-
-            if not student:
-                continue
-
-            if not teacher_has_class_access(
-                user_id,
-                student['class'],
-                assignment_type='classteacher'
-            ):
-                continue
-
-            # -------------------------------------------------
-            # Update only manual attendance status.
-            #
-            # QR clock_in / clock_out are NOT changed.
-            # -------------------------------------------------
-
-            cur.execute(
-                """
-                INSERT INTO attendance
-                (
-                    student_id,
-                    date,
-                    status
-                )
-                VALUES (%s, %s, %s)
-
-                ON CONFLICT (student_id, date)
-                DO UPDATE SET
-                    status = EXCLUDED.status,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (
-                    student_id,
-                    selected_date,
-                    value
-                )
-            )
-
-        db.commit()
-        cur.close()
-
-        flash('Attendance saved successfully.', 'success')
-
-        return redirect(
-            url_for(
-                'teacher_attendance',
-                date=selected_date,
-                search=search_query
-            )
-        )
-
-    # ---------------------------------------------------------
-    # GET STUDENTS + ATTENDANCE
-    # ---------------------------------------------------------
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    # ---------------------------------------------------------
-    # Main class e.g. S.1
-    # Include streams S.1A, S.1B, S.1C, etc.
-    # ---------------------------------------------------------
-
-    if re.match(r'^S\.\d+$', selected_class):
-
-        cur.execute(
-            """
-            SELECT
-                s.student_id,
-                s.full_name,
-                s.class,
-                a.status,
-                a.clock_in,
-                a.clock_out,
-                a.clock_in_method,
-                a.clock_out_method
-            FROM students s
-
-            LEFT JOIN attendance a
-                ON s.student_id = a.student_id
-                AND a.date = %s
-
-            WHERE
-                s.class = %s
-                OR s.class ~ %s
-
-            ORDER BY
-                s.class,
-                s.full_name
-            """,
-            (
-                selected_date,
-                selected_class,
-                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
-            )
-        )
-
-    # ---------------------------------------------------------
-    # Specific stream e.g. S.1A
-    # ---------------------------------------------------------
-
-    else:
-
-        cur.execute(
-            """
-            SELECT
-                s.student_id,
-                s.full_name,
-                s.class,
-                a.status,
-                a.clock_in,
-                a.clock_out,
-                a.clock_in_method,
-                a.clock_out_method
-            FROM students s
-
-            LEFT JOIN attendance a
-                ON s.student_id = a.student_id
-                AND a.date = %s
-
-            WHERE s.class = %s
-
-            ORDER BY s.full_name
-            """,
-            (
-                selected_date,
-                selected_class
-            )
-        )
-
-    records = cur.fetchall()
-    cur.close()
-
-    # ---------------------------------------------------------
-    # SUMMARY
-    #
-    # IMPORTANT:
-    # Summary is calculated from the FULL class records,
-    # before applying the search filter.
-    # ---------------------------------------------------------
-
-    total = len(records)
-
-    present = sum(
-        1
-        for r in records
-        if r['clock_in'] and not r['clock_out']
-    )
-
-    left_school = sum(
-        1
-        for r in records
-        if r['clock_out']
-    )
-
-    absent = sum(
-        1
-        for r in records
-        if not r['clock_in']
-        and r['status'] != 'Present'
-        and r['status'] != 'Late'
-    )
-
-    late = sum(
-        1
-        for r in records
-        if r['status'] == 'Late'
-    )
-
-    summary = {
-        'total': total,
-        'present': present,
-        'absent': absent,
-        'left': left_school,
-        'late': late
-    }
-
-    # ---------------------------------------------------------
-    # FILTER DISPLAY RECORDS
-    #
-    # Search works with:
-    # - Student ID
-    # - Full name
-    # - Partial name
-    # ---------------------------------------------------------
-
-    if search_query:
-
-        search_lower = search_query.lower()
-
-        display_records = [
-            r
-            for r in records
-            if search_lower in (
-                r['student_id'] or ''
-            ).lower()
-            or search_lower in (
-                r['full_name'] or ''
-            ).lower()
-        ]
-
-    else:
-
-        display_records = records
-
-    # ---------------------------------------------------------
-    # RENDER PAGE
-    # ---------------------------------------------------------
-
-    return render_template(
-        'teacher/attendance.html',
-        records=display_records,
-        selected_date=selected_date,
-        assigned_class=selected_class,
-        summary=summary,
-        search_query=search_query
-    )
-
-@app.route('/teacher/attendance-reports')
-def teacher_attendance_reports():
-
-    if not check_permission(['classteacher','headteacher','dos']):
-        abort(403)
-    user_id = session.get('user_id')
-    user_role = session.get('role')
-    selected_class = session.get('selected_class')
-    if user_role in['headteacher','dos']:
-        
-        selected_class = request.args.get(
-            'class',
-            'ALL'
-        ).strip().upper()
-    else:
-        if not selected_class:
-            flash('No class selected.', 'danger')
-            return redirect(url_for('teacher_students'))
-    
-        selected_class = selected_class.strip().upper()
-    
-        if not teacher_has_class_access(
-            user_id,
-            selected_class,
-            assignment_type='classteacher'
-        ):
-            abort(403)
-    # DATE RANGE
-    today = date.today()
-    default_from = today.replace(day=1)
-    date_from = request.args.get(
-        'date_from',
-        default_from.strftime('%Y-%m-%d')
-    )
-
-    date_to = request.args.get(
-        'date_to',
-        today.strftime('%Y-%m-%d')
-    )
-    # ---------------------------------------------------------
-    # CLOCK-IN SUMMARY DATE RANGE
-    # This is independent from the main attendance report.
-    # ---------------------------------------------------------
-    
-    clockin_date_from = request.args.get(
-        'clockin_date_from',
-        date_from
-    )
-    
-    clockin_date_to = request.args.get(
-        'clockin_date_to',
-        date_to
-    )
-    
-    try:
-    
-        clockin_date_from_obj = datetime.strptime(
-            clockin_date_from,
-            '%Y-%m-%d'
-        ).date()
-    
-        clockin_date_to_obj = datetime.strptime(
-            clockin_date_to,
-            '%Y-%m-%d'
-        ).date()
-    
-    except ValueError:
-    
-        flash(
-            'Invalid clock-in summary date range.',
-            'danger'
-        )
-    
-        return redirect(
-            url_for('teacher_attendance_reports')
-        )
-    
-    if clockin_date_from_obj > clockin_date_to_obj:
-    
-        flash(
-            'Clock-in summary starting date cannot be after the ending date.',
-            'danger'
-        )
-    
-        return redirect(
-            url_for('teacher_attendance_reports')
-        )
-    # ---------------------------------------------------------
-    # VALIDATE DATES
-    # ---------------------------------------------------------
-
-    try:
-
-        date_from_obj = datetime.strptime(
-            date_from,
-            '%Y-%m-%d'
-        ).date()
-
-        date_to_obj = datetime.strptime(
-            date_to,
-            '%Y-%m-%d'
-        ).date()
-
-    except ValueError:
-
-        flash(
-            'Invalid report date range.',
-            'danger'
-        )
-
-        return redirect(
-            url_for('teacher_attendance_reports')
-        )
-
-    if date_from_obj > date_to_obj:
-
-        flash(
-            'The starting date cannot be after the ending date.',
-            'danger'
-        )
-
-        return redirect(
-            url_for('teacher_attendance_reports')
-        )
-
-    # ---------------------------------------------------------
-    # STUDENT SEARCH
-    # ---------------------------------------------------------
-
-    student_search = request.args.get(
-        'student_search',
-        ''
-    ).strip()
-
-    selected_student_id = request.args.get(
-        'student_id',
-        ''
-    ).strip()
-
-    db = get_db_dict()
-    cur = db.cursor()
-    class_options = []
-    if user_role in ['headteacher','dos']:
-        cur.execute(
-            """
-            SELECT DISTINCT class
-            FROM students
-            WHERE class IS NOT NULL
-              AND TRIM(class) <> ''
-            ORDER BY class
-            """
-        )
-        class_rows = cur.fetchall()
-    
-        class_options = [
-            row['class'].strip().upper()
-            for row in class_rows
-        ]
-    # ---------------------------------------------------------
-    # GET STUDENTS IN TEACHER'S CLASS
-    # ---------------------------------------------------------
-
-    if selected_class == 'ALL':
-        cur.execute(
-            """
-            SELECT
-                student_id,
-                full_name,
-                class, sex
-            FROM students
-            ORDER BY
-                class,
-                full_name
-            """
-        )
-    
-    elif re.match(r'^S\.\d+$', selected_class):
-        cur.execute(
-            """
-            SELECT
-                student_id,
-                full_name,
-                class, sex
-            FROM students
-            WHERE
-                class = %s
-                OR class ~ %s
-            ORDER BY
-                class,
-                full_name
-            """,
-            (
-                selected_class,
-                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
-            )
-        )
-    
-    else:
-    
-        cur.execute(
-            """
-            SELECT
-                student_id,
-                full_name,
-                class, sex
-            FROM students
-            WHERE class = %s
-            ORDER BY full_name
-            """,
-            (selected_class,)
-        )
-
-    class_students = cur.fetchall()
-
-    # ---------------------------------------------------------
-    # STUDENT SEARCH RESULTS
-    # ---------------------------------------------------------
-
-    search_results = []
-
-    if student_search:
-
-        search_lower = student_search.lower()
-
-        search_results = [
-            student
-            for student in class_students
-            if search_lower in (
-                student['student_id'] or ''
-            ).lower()
-            or search_lower in (
-                student['full_name'] or ''
-            ).lower()
-        ]
-
-    # ---------------------------------------------------------
-    # SELECTED STUDENT
-    # ---------------------------------------------------------
-
-    selected_student = None
-    student_summary = None
-
-    if selected_student_id:
-
-        for student in class_students:
-
-            if student['student_id'] == selected_student_id:
-
-                selected_student = student
-                break
-
-        if selected_student:
-
-            # -------------------------------------------------
-            # STUDENT ATTENDANCE SUMMARY
-            # -------------------------------------------------
-
-            if selected_class == 'ALL':
-
-                cur.execute(
-                    """
-                    WITH school_days AS (
-                        SELECT DISTINCT
-                            a.date
-                        FROM attendance a
-                        WHERE
-                            a.date BETWEEN %s AND %s
-                    )
-                    SELECT
-                        COUNT(sd.date) AS school_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_in IS NOT NULL
-                                     OR a.status = 'Present'
-                                     OR a.status = 'Late'
-                                THEN 1
-                            END
-                        ) AS attended_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.status = 'Late'
-                                THEN 1
-                            END
-                        ) AS late_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.status = 'Absent'
-                                THEN 1
-                            END
-                        ) AS absent_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_in IS NOT NULL
-                                     AND a.clock_out IS NULL
-                                THEN 1
-                            END
-                        ) AS currently_in_school,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_out IS NOT NULL
-                                THEN 1
-                            END
-                        ) AS days_left_school
-            
-                    FROM school_days sd
-            
-                    LEFT JOIN attendance a
-                        ON a.student_id = %s
-                        AND a.date = sd.date
-                    """,
-                    (
-                        date_from_obj,
-                        date_to_obj,
-                        selected_student_id
-                    )
-                )
-            
-            else:
-            
-                cur.execute(
-                    """
-                    WITH school_days AS (
-                        SELECT DISTINCT
-                            a.date
-                        FROM attendance a
-                        INNER JOIN students s
-                            ON s.student_id = a.student_id
-                        WHERE
-                            a.date BETWEEN %s AND %s
-                            AND (
-                                s.class = %s
-                                OR s.class ~ %s
-                            )
-                    )
-                    SELECT
-                        COUNT(sd.date) AS school_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_in IS NOT NULL
-                                     OR a.status = 'Present'
-                                     OR a.status = 'Late'
-                                THEN 1
-                            END
-                        ) AS attended_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.status = 'Late'
-                                THEN 1
-                            END
-                        ) AS late_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.status = 'Absent'
-                                THEN 1
-                            END
-                        ) AS absent_days,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_in IS NOT NULL
-                                     AND a.clock_out IS NULL
-                                THEN 1
-                            END
-                        ) AS currently_in_school,
-            
-                        COUNT(
-                            CASE
-                                WHEN a.clock_out IS NOT NULL
-                                THEN 1
-                            END
-                        ) AS days_left_school
-            
-                    FROM school_days sd
-            
-                    LEFT JOIN attendance a
-                        ON a.student_id = %s
-                        AND a.date = sd.date
-                    """,
-                    (
-                        date_from_obj,
-                        date_to_obj,
-                        selected_class,
-                        '^' + re.escape(selected_class) + r'[A-Za-z]+$',
-                        selected_student_id
-                    )
-                )
-            
-            student_summary = cur.fetchone()
-            school_days = (
-                student_summary['school_days']
-                or 0
-            )
-
-            attended_days = (
-                student_summary['attended_days']
-                or 0
-            )
-
-            late_days = (
-                student_summary['late_days']
-                or 0
-            )
-
-            absent_days = (
-                student_summary['absent_days']
-                or 0
-            )
-
-            currently_in_school = (
-                student_summary['currently_in_school']
-                or 0
-            )
-
-            days_left_school = (
-                student_summary['days_left_school']
-                or 0
-            )
-
-            if school_days > 0:
-
-                attendance_rate = round(
-                    (
-                        attended_days
-                        / school_days
-                    ) * 100,
-                    1
-                )
-
-            else:
-
-                attendance_rate = 0
-
-            student_summary = {
-                'school_days': school_days,
-                'attended_days': attended_days,
-                'late_days': late_days,
-                'absent_days': absent_days,
-                'currently_in_school': currently_in_school,
-                'days_left_school': days_left_school,
-                'attendance_rate': attendance_rate
-            }
-
-    # ---------------------------------------------------------
-    # CLASS SUMMARY
-    # ---------------------------------------------------------
-
-    class_summary = []
-
-    # ---------------------------------------------------------
-    # Find dates where attendance was actually recorded
-    # for this class.
-    #
-    # This avoids counting weekends/holidays automatically
-    # as school days.
-    # ---------------------------------------------------------
-
-    if selected_class == 'ALL':
-        cur.execute(
-            """
-            SELECT COUNT(DISTINCT a.date) AS school_days
-            FROM attendance a
-            INNER JOIN students s
-                ON s.student_id = a.student_id
-            WHERE
-                a.date BETWEEN %s AND %s
-            """,
-            (
-                date_from_obj,
-                date_to_obj
-            )
-        )
-    
-    else:
-        cur.execute(
-            """
-            SELECT COUNT(DISTINCT a.date) AS school_days
-            FROM attendance a
-            INNER JOIN students s
-                ON s.student_id = a.student_id
-            WHERE
-                a.date BETWEEN %s AND %s
-                AND (
-                    s.class = %s
-                    OR s.class ~ %s
-                )
-            """,
-            (
-                date_from_obj,
-                date_to_obj,
-                selected_class,
-                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
-            )
-        )
-
-    # IMPORTANT:
-    # Fetch this BEFORE running another query.
-    school_days_row = cur.fetchone()
-
-    school_days = (
-        (school_days_row['school_days'] or 0)
-        if school_days_row
-        else 0
-    )
-    # ---------------------------------------------------------
-    # CLOCK-IN ATTENDANCE SUMMARY
-    #
-    # This summary:
-    # - Uses its own date range
-    # - Counts actual clock-ins only
-    # - Does NOT use attendance.status
-    # - Groups by class/stream
-    # - Does NOT group by date
-    # - Counts each student once in the selected period
-    # ---------------------------------------------------------
-    
-    clockin_summary = []
-    
-    
-    if selected_class == 'ALL':
-    
-        cur.execute(
-            """
-            SELECT
-                TRIM(s.class) AS class_name,
-    
-                COUNT(
-                    DISTINCT CASE
-                        WHEN LOWER(TRIM(s.sex)) IN
-                            ('male', 'm', 'boy', 'boys')
-                        THEN s.student_id
-                    END
-                ) AS boys,
-    
-                COUNT(
-                    DISTINCT CASE
-                        WHEN LOWER(TRIM(s.sex)) IN
-                            ('female', 'f', 'girl', 'girls')
-                        THEN s.student_id
-                    END
-                ) AS girls,
-    
-                COUNT(
-                    DISTINCT s.student_id
-                ) AS total
-    
-            FROM attendance a
-    
-            INNER JOIN students s
-                ON s.student_id = a.student_id
-    
-            WHERE
-                a.date BETWEEN %s AND %s
-                AND a.clock_in IS NOT NULL
-                AND s.admission_status = 'approved'
-    
-            GROUP BY
-                TRIM(s.class)
-    
-            ORDER BY
-                TRIM(s.class)
-            """,
-            (
-                clockin_date_from_obj,
-                clockin_date_to_obj
-            )
-        )
-    
-    else:
-    
-        cur.execute(
-            """
-            SELECT
-                TRIM(s.class) AS class_name,
-    
-                COUNT(
-                    DISTINCT CASE
-                        WHEN LOWER(TRIM(s.sex)) IN
-                            ('male', 'm', 'boy', 'boys')
-                        THEN s.student_id
-                    END
-                ) AS boys,
-    
-                COUNT(
-                    DISTINCT CASE
-                        WHEN LOWER(TRIM(s.sex)) IN
-                            ('female', 'f', 'girl', 'girls')
-                        THEN s.student_id
-                    END
-                ) AS girls,
-    
-                COUNT(
-                    DISTINCT s.student_id
-                ) AS total
-    
-            FROM attendance a
-    
-            INNER JOIN students s
-                ON s.student_id = a.student_id
-    
-            WHERE
-                a.date BETWEEN %s AND %s
-                AND a.clock_in IS NOT NULL
-                AND s.admission_status = 'approved'
-                AND (
-                    s.class = %s
-                    OR s.class ~ %s
-                )
-    
-            GROUP BY
-                TRIM(s.class)
-    
-            ORDER BY
-                TRIM(s.class)
-            """,
-            (
-                clockin_date_from_obj,
-                clockin_date_to_obj,
-                selected_class,
-                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
-            )
-        )
-    
-    
-    clockin_rows = cur.fetchall()
-    
-    
-    for row in clockin_rows:
-    
-        boys = row['boys'] or 0
-        girls = row['girls'] or 0
-        total = row['total'] or 0
-    
-        clockin_summary.append({
-            'class_name': row['class_name'],
-            'boys': boys,
-            'girls': girls,
-            'total': total
-        })
-    
-    
-    # ---------------------------------------------------------
-    # CLOCK-IN GRAND TOTALS
-    # ---------------------------------------------------------
-    
-    clockin_totals = {
-        'boys': sum(
-            row['boys']
-            for row in clockin_summary
-        ),
-    
-        'girls': sum(
-            row['girls']
-            for row in clockin_summary
-        ),
-    
-        'total': sum(
-            row['total']
-            for row in clockin_summary
-        )
-    }
-    # ---------------------------------------------------------
-    # CLASS STUDENT SUMMARY
-    # ---------------------------------------------------------
-
-    for student in class_students:
-
-        cur.execute(
-            """
-            SELECT
-
-                COUNT(
-                    CASE
-                        WHEN
-                            a.clock_in IS NOT NULL
-                            OR a.status = 'Present'
-                            OR a.status = 'Late'
-                        THEN 1
-                    END
-                ) AS present_days,
-
-                COUNT(
-                    CASE
-                        WHEN a.status = 'Late'
-                        THEN 1
-                    END
-                ) AS late_days,
-
-                COUNT(
-                    CASE
-                        WHEN a.status = 'Absent'
-                        THEN 1
-                    END
-                ) AS absent_days
-
-            FROM attendance a
-
-            WHERE
-                a.student_id = %s
-                AND a.date BETWEEN %s AND %s
-            """,
-            (
-                student['student_id'],
-                date_from_obj,
-                date_to_obj
-            )
-        )
-
-        attendance = cur.fetchone()
-
-        present_days = (
-            attendance['present_days']
-            or 0
-        )
-
-        late_days = (
-            attendance['late_days']
-            or 0
-        )
-
-        absent_days = (
-            attendance['absent_days']
-            or 0
-        )
-
-        # -----------------------------------------------------
-        # Calculate attendance rate
-        #
-        # Present + Late count as attendance.
-        # -----------------------------------------------------
-
-        if school_days > 0:
-
-            attendance_rate = round(
-                (
-                    (present_days)
-                    / school_days
-                ) * 100,
-                1
-            )
-
-        else:
-
-            attendance_rate = 0
-
-        class_summary.append({
-            'student_id': student['student_id'],
-            'full_name': student['full_name'],
-            'class': student['class'],
-            'sex': student['sex'],
-            'present_days': present_days,
-            'late_days': late_days,
-            'absent_days': absent_days,
-            'attendance_rate': attendance_rate
-        })
-
-    # ---------------------------------------------------------
-    # CLASS TOTALS
-    # ---------------------------------------------------------
-
-    total_students = len(class_summary)
-
-    total_present = sum(
-        r['present_days']
-        for r in class_summary
-    )
-
-    total_late = sum(
-        r['late_days']
-        for r in class_summary
-    )
-
-    total_absent = sum(
-        r['absent_days']
-        for r in class_summary
-    )
-
-    if total_students > 0 and school_days > 0:
-
-        class_average = round(
-            sum(
-                r['attendance_rate']
-                for r in class_summary
-            ) / total_students,
-            1
-        )
-
-    else:
-
-        class_average = 0
-
-    class_totals = {
-        'students': total_students,
-        'school_days': school_days,
-        'present': total_present,
-        'late': total_late,
-        'absent': total_absent,
-        'average': class_average
-    }
-
-    cur.close()
-
-    return render_template(
-        'teacher/attendance_reports.html',
-        assigned_class=selected_class,
-        class_options=class_options,
-        user_role=user_role,
-        date_from=date_from,
-        date_to=date_to,
-        clockin_date_from=clockin_date_from,
-        clockin_date_to=clockin_date_to,
-        student_search=student_search,
-        search_results=search_results,
-        selected_student=selected_student,
-        student_summary=student_summary,
-        class_summary=class_summary,
-        class_totals=class_totals, clockin_summary=clockin_summary,
-        clockin_totals=clockin_totals
-    )
-
 @app.route('/dos/save_face_descriptor', methods=['POST'])
 def dos_save_face_descriptor():
 
@@ -6696,13 +5459,13 @@ def dos_save_face_descriptor():
 
     data = request.get_json(silent=True) or {}
 
-    student_id = (data.get('student_id') or '').strip()
+    pupil_id = (data.get('pupil_id') or '').strip()
     descriptor = data.get('descriptor')
 
-    if not student_id:
+    if not pupil_id:
         return jsonify({
             'success': False,
-            'message': 'Student ID is required.'
+            'message': 'Pupil ID is required.'
         }), 400
 
     if not isinstance(descriptor, list) or len(descriptor) != 128:
@@ -6719,11 +5482,11 @@ def dos_save_face_descriptor():
 
         cur.execute(
             """
-            UPDATE students
+            UPDATE pupils
             SET face_descriptor = %s
-            WHERE student_id = %s
+            WHERE pupil_id = %s
             """,
-            (descriptor_json, student_id)
+            (descriptor_json, pupil_id)
         )
 
         if cur.rowcount == 0:
@@ -6732,7 +5495,7 @@ def dos_save_face_descriptor():
 
             return jsonify({
                 'success': False,
-                'message': 'Student not found.'
+                'message': 'Pupil not found.'
             }), 404
 
         db.commit()
@@ -6845,7 +5608,7 @@ def teacher_upload_marks():
         cur.execute(
             """
             SELECT DISTINCT class
-            FROM students
+            FROM pupils
             WHERE class ~ %s
             ORDER BY class
             """,
@@ -7017,8 +5780,8 @@ def teacher_upload_marks():
             """
             SELECT m.*
             FROM marks AS m
-            JOIN students AS s
-              ON s.student_id = m.student_id
+            JOIN pupils AS s
+              ON s.pupil_id = m.pupil_id
             WHERE m.subject = %s
               AND m.term = %s
               AND m.year = %s
@@ -7033,7 +5796,7 @@ def teacher_upload_marks():
         )
     
         saved_marks = {
-            str(row['student_id']): row
+            str(row['pupil_id']): row
             for row in cur.fetchall()
         }
 
@@ -7071,22 +5834,22 @@ def teacher_upload_marks():
         level = 'olevel'
 
     # =========================================================
-    # GET STUDENTS
+    # GET PUPILS
     # =========================================================
 
     cur.execute(
         """
         SELECT
-            student_id,
+            pupil_id,
             full_name
-        FROM students
+        FROM pupils
         WHERE class = %s
         ORDER BY full_name
         """,
         (selected_class,)
     )
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     # =========================================================
     # EXCEL UPLOAD
@@ -7325,7 +6088,7 @@ def teacher_upload_marks():
 
         selected_class=selected_class,  subject=subject,
         saved_marks=saved_marks, 
-        students=students
+        pupils=pupils
     )
 
 @app.route("/save_manual_marks", methods=["POST"])
@@ -7503,8 +6266,8 @@ def save_manual_marks():
     # GET FORM DATA
     # =========================================================
 
-    student_ids = request.form.getlist(
-        "student_id[]"
+    pupil_ids = request.form.getlist(
+        "pupil_id[]"
     )
 
     paper1_values = request.form.getlist(
@@ -7552,11 +6315,11 @@ def save_manual_marks():
             return None
 
     # =========================================================
-    # PROCESS EACH STUDENT
+    # PROCESS EACH PUPIL
     # =========================================================
 
     for i, sid in enumerate(
-        student_ids
+        pupil_ids
     ):
 
         # -----------------------------------------------------
@@ -7654,7 +6417,7 @@ def save_manual_marks():
             """
             INSERT INTO marks
             (
-                student_id,
+                pupil_id,
                 subject,
                 paper1,
                 paper2,
@@ -7681,7 +6444,7 @@ def save_manual_marks():
 
             ON CONFLICT
             (
-                student_id,
+                pupil_id,
                 subject,
                 term,
                 year
@@ -7928,8 +6691,8 @@ def save_olevel_marks():
     # GET MARK DATA
     # =========================================================
 
-    student_ids = request.form.getlist(
-        "student_id[]"
+    pupil_ids = request.form.getlist(
+        "pupil_id[]"
     )
 
     ai1_raw = request.form.getlist(
@@ -7984,11 +6747,11 @@ def save_olevel_marks():
             return None
 
     # =========================================================
-    # PROCESS STUDENTS
+    # PROCESS PUPILS
     # =========================================================
 
     for i, sid in enumerate(
-        student_ids
+        pupil_ids
     ):
 
         # -----------------------------------------------------
@@ -8142,7 +6905,7 @@ def save_olevel_marks():
             """
             INSERT INTO marks
             (
-                student_id,
+                pupil_id,
                 subject,
                 ai1,
                 ai2,
@@ -8180,7 +6943,7 @@ def save_olevel_marks():
 
             ON CONFLICT
             (
-                student_id,
+                pupil_id,
                 subject,
                 term,
                 year
@@ -8281,8 +7044,8 @@ def save_olevel_marks():
             subject=subject
         )
     )
-@app.route('/teacher/report_card/<student_id>')
-def teacher_report_card(student_id):
+@app.route('/teacher/report_card/<pupil_id>')
+def teacher_report_card(pupil_id):
 
     if not check_permission([
         'classteacher',
@@ -8304,23 +7067,23 @@ def teacher_report_card(student_id):
         if not selected_class:
             flash('No class selected','danger')
             return redirect(
-                url_for('teacher_students')
+                url_for('teacher_pupils')
             )
 
         cur.execute(
-            "SELECT class FROM students WHERE student_id=%s",
-            (student_id,)
+            "SELECT class FROM pupils WHERE pupil_id=%s",
+            (pupil_id,)
         )
 
         res = cur.fetchone()
 
         if not res or res['class'] != selected_class:
             flash(
-                'Student not in your class.',
+                'Pupil not in your class.',
                 'danger'
             )
             return redirect(
-                url_for('teacher_students')
+                url_for('teacher_pupils')
             )
 
 
@@ -8340,10 +7103,10 @@ def teacher_report_card(student_id):
         cur.execute(
             """
             SELECT parent_phone
-            FROM students
-            WHERE student_id=%s
+            FROM pupils
+            WHERE pupil_id=%s
             """,
-            (student_id,)
+            (pupil_id,)
         )
 
         res = cur.fetchone()
@@ -8363,15 +7126,15 @@ def teacher_report_card(student_id):
         cur.execute(
             """
             SELECT class
-            FROM students
-            WHERE student_id=%s
+            FROM pupils
+            WHERE pupil_id=%s
             """,
-            (student_id,)
+            (pupil_id,)
         )
 
         if not cur.fetchone():
             flash(
-                'Student not found.',
+                'Pupil not found.',
                 'danger'
             )
 
@@ -8386,17 +7149,17 @@ def teacher_report_card(student_id):
             full_name,
             class,
             photo_path
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         """,
-        (student_id,)
+        (pupil_id,)
     )
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         flash(
-            'Student not found.',
+            'Pupil not found.',
             'danger'
         )
         return redirect(
@@ -8404,10 +7167,10 @@ def teacher_report_card(student_id):
         )
 
 
-    full_name = student['full_name']
-    class_name = student['class']
+    full_name = pupil['full_name']
+    class_name = pupil['class']
     photo_url = get_photo_url(
-        student['photo_path']
+        pupil['photo_path']
     )
     # =========================================================
     # =========================================================
@@ -8520,7 +7283,7 @@ def teacher_report_card(student_id):
         if settings and settings['headteacher_stamp']
         else None
     )
-    # Determine whether the student is A-Level
+    # Determine whether the pupil is A-Level
     class_upper = (class_name or '').strip().upper()
     
     # Remove dots and spaces so that:
@@ -8552,13 +7315,13 @@ def teacher_report_card(student_id):
                 points,
                 teacher_initials
             FROM marks
-            WHERE student_id=%s
+            WHERE pupil_id=%s
             AND term=%s
             AND year=%s
             ORDER BY subject
             """,
             (
-                student_id,
+                pupil_id,
                 term,
                 year
             )
@@ -8593,7 +7356,7 @@ def teacher_report_card(student_id):
         cur.close()
         return render_template(
             'teacher/report_card_alevel.html',
-            student_id=student_id,
+            pupil_id=pupil_id,
             full_name=full_name,
             class_name=class_name,
             photo_url=photo_url,
@@ -8633,13 +7396,13 @@ def teacher_report_card(student_id):
                 descriptor,
                 teacher_initials
             FROM marks
-            WHERE student_id=%s
+            WHERE pupil_id=%s
             AND term=%s
             AND year=%s
             ORDER BY subject
             """,
             (
-                student_id,
+                pupil_id,
                 term,
                 year
             )
@@ -8766,7 +7529,7 @@ def teacher_report_card(student_id):
         cur.close()
         return render_template(
             'teacher/report_card.html',
-            student_id=student_id,
+            pupil_id=pupil_id,
             full_name=full_name,
             class_name=class_name,
             photo_url=photo_url,
@@ -8794,8 +7557,8 @@ def teacher_report_card(student_id):
     
         )
 
-@app.route('/teacher/edit_student/<student_id>', methods=['GET', 'POST'])
-def teacher_edit_student(student_id):
+@app.route('/teacher/edit_pupil/<pupil_id>', methods=['GET', 'POST'])
+def teacher_edit_pupil(pupil_id):
 
     if not check_permission(['classteacher']):
         abort(403)
@@ -8804,28 +7567,28 @@ def teacher_edit_student(student_id):
     cur = db.cursor()
 
     # =====================================================
-    # GET STUDENT
+    # GET PUPIL
     # =====================================================
 
     cur.execute("""
         SELECT *
-        FROM students
-        WHERE student_id=%s
-    """, (student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """, (pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
 
         cur.close()
 
         flash(
-            'Student not found.',
+            'Pupil not found.',
             'danger'
         )
 
         return redirect(
-            url_for('teacher_students')
+            url_for('teacher_pupils')
         )
 
     # =====================================================
@@ -8848,7 +7611,7 @@ def teacher_edit_student(student_id):
     )
 
     # =====================================================
-    # UPDATE STUDENT
+    # UPDATE PUPIL
     # =====================================================
 
     if request.method == 'POST':
@@ -8962,8 +7725,8 @@ def teacher_edit_student(student_id):
 
             return redirect(
                 url_for(
-                    'teacher_edit_student',
-                    student_id=student_id
+                    'teacher_edit_pupil',
+                    pupil_id=pupil_id
                 )
             )
 
@@ -8985,8 +7748,8 @@ def teacher_edit_student(student_id):
 
             return redirect(
                 url_for(
-                    'teacher_edit_student',
-                    student_id=student_id
+                    'teacher_edit_pupil',
+                    pupil_id=pupil_id
                 )
             )
 
@@ -9025,7 +7788,7 @@ def teacher_edit_student(student_id):
         # HANDLE PHOTO
         # =================================================
 
-        photo_path = student.get(
+        photo_path = pupil.get(
             'photo_path',
             'default_avatar.png'
         )
@@ -9046,7 +7809,7 @@ def teacher_edit_student(student_id):
                 1
             )[1].lower()
 
-            photo_filename = f"{student_id}.{ext}"
+            photo_filename = f"{pupil_id}.{ext}"
 
             photo.save(
                 os.path.join(
@@ -9058,11 +7821,11 @@ def teacher_edit_student(student_id):
             photo_path = photo_filename
 
         # =================================================
-        # UPDATE STUDENT
+        # UPDATE PUPIL
         # =================================================
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET
                 full_name=%s,
                 parent_phone=%s,
@@ -9077,7 +7840,7 @@ def teacher_edit_student(student_id):
                 programme=%s,
                 residence=%s
 
-            WHERE student_id=%s
+            WHERE pupil_id=%s
         """, (
             full_name,
             parent_phone,
@@ -9091,7 +7854,7 @@ def teacher_edit_student(student_id):
             photo_path,
             programme,
             residence,
-            student_id
+            pupil_id
         ))
 
         db.commit()
@@ -9099,12 +7862,12 @@ def teacher_edit_student(student_id):
         cur.close()
 
         flash(
-            f'Student {full_name} updated successfully!',
+            f'Pupil {full_name} updated successfully!',
             'success'
         )
 
         return redirect(
-            url_for('teacher_students')
+            url_for('teacher_pupils')
         )
 
     # =====================================================
@@ -9114,14 +7877,14 @@ def teacher_edit_student(student_id):
     cur.close()
 
     return render_template(
-        'teacher/edit_student.html',
-        student=student,
+        'teacher/edit_pupil.html',
+        pupil=pupil,
         assigned_class=assigned_class
     )
 
 
-@app.route('/teacher/remove_student/<student_id>', methods=['POST'])
-def teacher_remove_student(student_id):
+@app.route('/teacher/remove_pupil/<pupil_id>', methods=['POST'])
+def teacher_remove_pupil(pupil_id):
 
     if not check_permission(['classteacher', 'dos']):
         abort(403)
@@ -9133,26 +7896,26 @@ def teacher_remove_student(student_id):
 
     cur.execute("""
         SELECT full_name, class
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
     """,
-    (student_id,))
+    (pupil_id,))
 
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
 
-    if not student:
+    if not pupil:
 
         cur.close()
 
         flash(
-            'Student not found.',
+            'Pupil not found.',
             'danger'
         )
 
         return redirect(
-            url_for('teacher_students')
+            url_for('teacher_pupils')
         )
 
 
@@ -9178,35 +7941,35 @@ def teacher_remove_student(student_id):
         )
 
 
-        if assigned_class != student['class']:
+        if assigned_class != pupil['class']:
 
             cur.close()
 
             flash(
-                'You can only remove students from your own class.',
+                'You can only remove pupils from your own class.',
                 'danger'
             )
 
             return redirect(
-                url_for('teacher_students')
+                url_for('teacher_pupils')
             )
     cur.execute("""
-        DELETE FROM students
-        WHERE student_id=%s
+        DELETE FROM pupils
+        WHERE pupil_id=%s
     """,
-    (student_id,))
+    (pupil_id,))
     db.commit()
     cur.close()
     flash(
-        f"Student {student['full_name']} removed successfully.",
+        f"Pupil {pupil['full_name']} removed successfully.",
         'success'
     )
     return redirect(
-        url_for('teacher_students')
+        url_for('teacher_pupils')
     )
 
-@app.route('/teacher/upload_students', methods=['GET', 'POST'])
-def teacher_upload_students():
+@app.route('/teacher/upload_pupils', methods=['GET', 'POST'])
+def teacher_upload_pupils():
 
     if not check_permission(['classteacher']):
         abort(403)
@@ -9223,7 +7986,7 @@ def teacher_upload_students():
             )
 
             return redirect(
-                url_for('teacher_upload_students')
+                url_for('teacher_upload_pupils')
             )
 
         try:
@@ -9258,7 +8021,7 @@ def teacher_upload_students():
                 )
 
                 return redirect(
-                    url_for('teacher_upload_students')
+                    url_for('teacher_upload_pupils')
                 )
 
             assigned_class = (
@@ -9300,10 +8063,10 @@ def teacher_upload_students():
                 valid_programmes = []
 
             # =================================================
-            # INSERT STUDENT
+            # INSERT PUPIL
             # =================================================
 
-            def insert_student(
+            def insert_pupil(
                 full_name,
                 parent_phone,
                 programme='',
@@ -9380,19 +8143,19 @@ def teacher_upload_students():
                         return False
 
                 # ---------------------------------------------
-                # GENERATE STUDENT ID
+                # GENERATE PUPIL ID
                 # ---------------------------------------------
 
-                student_id = generate_student_id()
+                pupil_id = generate_pupil_id()
                 qr_token = generate_qr_token()
                 # ---------------------------------------------
                 # INSERT
                 # ---------------------------------------------
 
                 cur.execute("""
-                    INSERT INTO students
+                    INSERT INTO pupils
                     (
-                        student_id,
+                        pupil_id,
                         full_name,
                         class,
                         parent_phone,
@@ -9418,7 +8181,7 @@ def teacher_upload_students():
                         0
                     )
                 """, (
-                    student_id,
+                    pupil_id,
                     full_name,
                     assigned_class,
                     parent_phone,
@@ -9462,7 +8225,7 @@ def teacher_upload_students():
                     if h in [
                         'full_name',
                         'name',
-                        'student_name'
+                        'pupil_name'
                     ]:
 
                         full_name_col = idx
@@ -9485,7 +8248,7 @@ def teacher_upload_students():
                     elif h in [
                         'residence',
                         'boarding_status',
-                        'student_residence'
+                        'pupil_residence'
                     ]:
 
                         residence_col = idx
@@ -9545,7 +8308,7 @@ def teacher_upload_students():
                             ).value or ''
                         ).strip()
 
-                    if not insert_student(
+                    if not insert_pupil(
                         full_name,
                         parent_phone,
                         programme,
@@ -9556,7 +8319,7 @@ def teacher_upload_students():
 
                             errors.append(
                                 f"Row {row_idx}: "
-                                f"Student could not be uploaded."
+                                f"Pupil could not be uploaded."
                             )
 
             # =================================================
@@ -9593,7 +8356,7 @@ def teacher_upload_students():
                     if h in [
                         'full_name',
                         'name',
-                        'student_name'
+                        'pupil_name'
                     ]:
 
                         full_name_col = idx
@@ -9616,7 +8379,7 @@ def teacher_upload_students():
                     elif h in [
                         'residence',
                         'boarding_status',
-                        'student_residence'
+                        'pupil_residence'
                     ]:
 
                         residence_col = idx
@@ -9672,7 +8435,7 @@ def teacher_upload_students():
                             .strip()
                         )
 
-                    if not insert_student(
+                    if not insert_pupil(
                         full_name,
                         parent_phone,
                         programme,
@@ -9701,7 +8464,7 @@ def teacher_upload_students():
                 )
 
                 return redirect(
-                    url_for('teacher_upload_students')
+                    url_for('teacher_upload_pupils')
                 )
 
             # =================================================
@@ -9719,7 +8482,7 @@ def teacher_upload_students():
             add_notification(
                 'dos',
                 f'Class teacher uploaded '
-                f'{success_count} students to '
+                f'{success_count} pupils to '
                 f'class {assigned_class}',
                 '/dos/class_lists'
             )
@@ -9729,7 +8492,7 @@ def teacher_upload_students():
             # =================================================
 
             flash(
-                f'Uploaded {success_count} students '
+                f'Uploaded {success_count} pupils '
                 f'to class {assigned_class}. '
                 f'Errors: {error_count}',
                 'success'
@@ -9752,11 +8515,11 @@ def teacher_upload_students():
             )
 
         return redirect(
-            url_for('teacher_students')
+            url_for('teacher_pupils')
         )
 
     return render_template(
-        'teacher/upload_students.html'
+        'teacher/upload_pupils.html'
     )
 @app.route('/teacher/print_all_report_cards')
 def print_all_report_cards():
@@ -9860,7 +8623,7 @@ def print_all_report_cards():
         cur.close()
 
         return redirect(
-            url_for('teacher_students')
+            url_for('teacher_pupils')
         )
 
     # ============================================================
@@ -9953,44 +8716,44 @@ def print_all_report_cards():
         stamp_url = None
 
     # ============================================================
-    # GET STUDENTS
+    # GET PUPILS
     # ============================================================
 
     cur.execute(
         """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             lin,
             photo_path
-        FROM students
+        FROM pupils
         WHERE class=%s
         ORDER BY full_name
         """,
         (class_name,)
     )
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     reports = []
 
     # ============================================================
-    # BUILD REPORT FOR EACH STUDENT
+    # BUILD REPORT FOR EACH PUPIL
     # ============================================================
 
-    for student in students:
+    for pupil in pupils:
 
-        student_id = student['student_id']
+        pupil_id = pupil['pupil_id']
 
-        full_name = student['full_name']
+        full_name = pupil['full_name']
 
-        student_class = student['class']
+        pupil_class = pupil['class']
 
-        lin = student['lin']
+        lin = pupil['lin']
 
         photo_url = get_photo_url(
-            student['photo_path']
+            pupil['photo_path']
         )
 
         # ========================================================
@@ -9998,7 +8761,7 @@ def print_all_report_cards():
         # ========================================================
 
         class_upper = str(
-            student_class or ''
+            pupil_class or ''
         ).strip().upper()
 
         normalized_class = (
@@ -10039,13 +8802,13 @@ def print_all_report_cards():
                     points,
                     teacher_initials
                 FROM marks
-                WHERE student_id=%s
+                WHERE pupil_id=%s
                 AND term=%s
                 AND year=%s
                 ORDER BY subject
                 """,
                 (
-                    student_id,
+                    pupil_id,
                     term,
                     year
                 )
@@ -10098,9 +8861,9 @@ def print_all_report_cards():
 
             reports.append(
                 {
-                    'student_id': student_id,
+                    'pupil_id': pupil_id,
                     'full_name': full_name,
-                    'class_name': student_class,
+                    'class_name': pupil_class,
                     'lin': lin,
                     'photo_url': photo_url,
 
@@ -10140,13 +8903,13 @@ def print_all_report_cards():
                     descriptor,
                     teacher_initials
                 FROM marks
-                WHERE student_id=%s
+                WHERE pupil_id=%s
                 AND term=%s
                 AND year=%s
                 ORDER BY subject
                 """,
                 (
-                    student_id,
+                    pupil_id,
                     term,
                     year
                 )
@@ -10323,9 +9086,9 @@ def print_all_report_cards():
 
             reports.append(
                 {
-                    'student_id': student_id,
+                    'pupil_id': pupil_id,
                     'full_name': full_name,
-                    'class_name': student_class,
+                    'class_name': pupil_class,
                     'lin': lin,
                     'photo_url': photo_url,
 
@@ -10374,7 +9137,7 @@ def print_all_report_cards():
     # The class being printed is either A-Level OR O-Level.
     # Therefore we choose the correct template here.
     #
-    # This prevents A-Level students from being sent to
+    # This prevents A-Level pupils from being sent to
     # the O-Level print template.
     # ============================================================
 
@@ -10459,36 +9222,36 @@ def print_all_report_cards():
         stamp_url=stamp_url
     )
 
-@app.route('/dos/student_id/<student_id>')
-def student_id_card(student_id):
+@app.route('/dos/pupil_id/<pupil_id>')
+def pupil_id_card(pupil_id):
 
     if not check_permission(['dos', 'admin', 'headteacher']):
         abort(403)
 
-    # ================= STUDENT =================
+    # ================= PUPIL =================
     cur = get_db().cursor()
 
     cur.execute(
         """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             sex,
             photo_path,
-            student_signature,
+            pupil_signature,
             qr_token
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         """,
-        (student_id,)
+        (pupil_id,)
     )
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         cur.close()
-        flash('Student not found.', 'danger')
+        flash('Pupil not found.', 'danger')
         return redirect(request.referrer or url_for('dashboard'))
 
     # ================= SCHOOL SETTINGS =================
@@ -10517,7 +9280,7 @@ def student_id_card(student_id):
     # ================= DATES =================
     issue_date = date.today()
 
-    class_name = (student['class'] or '').strip().upper()
+    class_name = (pupil['class'] or '').strip().upper()
 
     # Remove spaces, dots and hyphens.
     normalized_class = re.sub(
@@ -10555,7 +9318,7 @@ def student_id_card(student_id):
 
     # IMPORTANT:
     # The QR contains ONLY the existing qr_token.
-    qr.add_data(student['qr_token'])
+    qr.add_data(pupil['qr_token'])
     qr.make(fit=True)
 
     qr_image = qr.make_image(
@@ -10575,16 +9338,16 @@ def student_id_card(student_id):
 
     # ================= RENDER CARD =================
     return render_template(
-        'dos/student_id_card.html',
-        student=student,
+        'dos/pupil_id_card.html',
+        pupil=pupil,
         settings=settings,
         issue_date=issue_date,
         expiry_date=expiry_date,
         qr_base64=qr_base64
     )
 
-@app.route('/dos/student-ids/print-backs')
-def print_student_id_backs():
+@app.route('/dos/pupil-ids/print-backs')
+def print_pupil_id_backs():
 
     if not check_permission(['dos', 'admin', 'headteacher']):
         abort(403)
@@ -10592,21 +9355,21 @@ def print_student_id_backs():
     cur = get_db().cursor()
 
     # ============================================================
-    # GET ALL STUDENTS
+    # GET ALL PUPILS
     # ============================================================
 
     cur.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             sex,
             qr_token
-        FROM students
+        FROM pupils
         ORDER BY class, full_name
     """)
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
 
     # ============================================================
@@ -10648,13 +9411,13 @@ def print_student_id_backs():
 
 
     # ============================================================
-    # CHECK STUDENTS
+    # CHECK PUPILS
     # ============================================================
 
-    if not students:
+    if not pupils:
 
         flash(
-            'No students were found.',
+            'No pupils were found.',
             'danger'
         )
 
@@ -10664,7 +9427,7 @@ def print_student_id_backs():
 
 
     # ============================================================
-    # GENERATE QR IMAGE FOR EACH STUDENT
+    # GENERATE QR IMAGE FOR EACH PUPIL
     #
     # IMPORTANT:
     # We use the EXISTING qr_token.
@@ -10672,15 +9435,15 @@ def print_student_id_backs():
     # We do NOT create a new token.
     # ============================================================
 
-    prepared_students = []
+    prepared_pupils = []
 
 
-    for student in students:
+    for pupil in pupils:
 
         qr_base64 = None
 
 
-        if student['qr_token']:
+        if pupil['qr_token']:
 
             qr = qrcode.QRCode(
                 version=1,
@@ -10689,7 +9452,7 @@ def print_student_id_backs():
                 border=2
             )
 
-            qr.add_data(student['qr_token'])
+            qr.add_data(pupil['qr_token'])
 
             qr.make(fit=True)
 
@@ -10714,34 +9477,34 @@ def print_student_id_backs():
             ).decode('utf-8')
 
 
-        # Add QR image to student record
-        student['qr_base64'] = qr_base64
+        # Add QR image to pupil record
+        pupil['qr_base64'] = qr_base64
 
 
-        prepared_students.append(student)
+        prepared_pupils.append(pupil)
 
 
     # ============================================================
-    # DIVIDE STUDENTS INTO A4 PAGES
+    # DIVIDE PUPILS INTO A4 PAGES
     #
     # 10 ID BACKS PER A4
     # 2 COLUMNS × 5 ROWS
     # ============================================================
 
-    students_per_page = 10
+    pupils_per_page = 10
 
     pages = []
 
 
     for i in range(
         0,
-        len(prepared_students),
-        students_per_page
+        len(prepared_pupils),
+        pupils_per_page
     ):
 
         pages.append(
-            prepared_students[
-                i:i + students_per_page
+            prepared_pupils[
+                i:i + pupils_per_page
             ]
         )
 
@@ -10751,207 +9514,16 @@ def print_student_id_backs():
     # ============================================================
 
     return render_template(
-        'dos/student_id_backs.html',
+        'dos/pupil_id_backs.html',
 
-        students=prepared_students,
+        pupils=prepared_pupils,
 
         pages=pages,
 
         settings=settings,
 
-        total_students=len(prepared_students)
+        total_pupils=len(prepared_pupils)
     )
-
-@app.route('/attendance/dashboard')
-def attendance_dashboard():
-
-    if not session.get('user_id'):
-        return redirect(url_for('login'))
-
-    user_id = session.get('user_id')
-
-    # Get the classes/streams assigned to this teacher
-    assignments = get_user_assignments(user_id)
-
-    if not assignments:
-        return render_template(
-            'attendance/dashboard.html',
-            students=[],
-            assignments=[],
-            selected_class='',
-            summary={
-                'total': 0,
-                'present': 0,
-                'absent': 0,
-                'left': 0
-            }
-        )
-
-    # Get selected class from URL
-    selected_class = request.args.get('class', '').strip().upper()
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    today = date.today()
-
-    # Get students
-    cur.execute("""
-        SELECT
-            s.student_id,
-            s.full_name,
-            s.class,
-            s.sex,
-            a.clock_in,
-            a.clock_out,
-            a.status
-        FROM students s
-        LEFT JOIN attendance a
-            ON a.student_id = s.student_id
-            AND a.date = %s
-        WHERE s.admission_status = 'approved'
-        ORDER BY s.class, s.full_name
-    """, (today,))
-
-    all_students = cur.fetchall()
-
-    cur.close()
-
-    # Keep only classes the teacher is allowed to see
-    students = []
-
-    for student in all_students:
-
-        if selected_class:
-            if student['class'].strip().upper() != selected_class:
-                continue
-
-        if teacher_has_class_access(
-            user_id,
-            student['class']
-        ):
-            students.append(student)
-
-    # Calculate summary
-    total = len(students)
-
-    present = sum(
-        1 for s in students
-        if s['clock_in'] and not s['clock_out']
-    )
-
-    left = sum(
-        1 for s in students
-        if s['clock_out']
-    )
-
-    absent = sum(
-        1 for s in students
-        if not s['clock_in']
-    )
-
-    summary = {
-        'total': total,
-        'present': present,
-        'absent': absent,
-        'left': left
-    }
-        # =================================================
-    # CLOCK-IN SUMMARY BY CLASS / STREAM AND SEX
-    # =================================================
-
-    stream_summary = {}
-
-    for student in students:
-
-        # Only count students who actually clocked in
-        if not student['clock_in']:
-            continue
-
-        class_name = (
-            student['class'] or ''
-        ).strip().upper()
-
-        sex = (
-            student['sex'] or ''
-        ).strip().lower()
-
-        if class_name not in stream_summary:
-
-            stream_summary[class_name] = {
-                'boys': 0,
-                'girls': 0,
-                'total': 0
-            }
-
-        if sex in ['male', 'm', 'boy', 'boys']:
-
-            stream_summary[class_name]['boys'] += 1
-
-        elif sex in ['female', 'f', 'girl', 'girls']:
-
-            stream_summary[class_name]['girls'] += 1
-
-        stream_summary[class_name]['total'] += 1
-
-    # Convert dictionary to sorted list
-    stream_summary = [
-        {
-            'class_name': class_name,
-            'boys': data['boys'],
-            'girls': data['girls'],
-            'total': data['total']
-        }
-        for class_name, data in sorted(
-            stream_summary.items()
-        )
-    ]
-    # Build list of classes teacher can access
-    accessible_classes = set()
-
-    for assignment in assignments:
-
-        class_name = (
-            assignment.get('class_name') or ''
-        ).strip().upper()
-
-        if class_name:
-            accessible_classes.add(class_name)
-
-    return render_template(
-        'attendance/dashboard.html',
-        students=students,
-        assignments=assignments,
-        accessible_classes=sorted(accessible_classes),
-        selected_class=selected_class,
-        summary=summary, stream_summary=stream_summary
-    )
-# ==================== BURSAR MODULE ====================
-
-def generate_receipt_number():
-    return generate_unique_number('RCP', 'payments', 'receipt_no', year_format=True)
-
-def send_fee_sms(phone_number, student_name, amount, balance):
-    if not phone_number:
-        return False
-    message = f"Payment of UGX {amount:,.2f} received for {student_name}. Balance: UGX {balance:,.2f}. Thank you."
-    return send_sms(phone_number, message)
-
-def calculate_nssf_and_paye(gross_salary):
-    cur = get_db().cursor()
-    cur.execute("SELECT nssf_employee_rate, paye_rate, paye_threshold FROM school_settings WHERE id=1")
-    rates = cur.fetchone()
-    cur.close()
-    nssf_employee_rate = rates['nssf_employee_rate'] if rates else 5.0
-    paye_rate = rates['paye_rate'] if rates else 10.0
-    paye_threshold = rates['paye_threshold'] if rates else 235000
-    nssf_employee = (gross_salary * nssf_employee_rate) / 100
-    taxable_amount = max(0, gross_salary - paye_threshold)
-    paye_tax = (taxable_amount * paye_rate) / 100
-    return {
-        'nssf_employee': round(nssf_employee, 2),
-        'paye_tax': round(paye_tax, 2)
-    }
 
 @app.route('/bursar/dashboard')
 def bursar_dashboard():
@@ -10966,20 +9538,20 @@ def bursar_dashboard():
             COALESCE(SUM(fees_total),0) AS total_fees,
             COALESCE(SUM(fees_paid),0) AS total_paid,
             COALESCE(SUM(fees_balance),0) AS total_balance
-        FROM students
+        FROM pupils
     """)
     totals = cur.fetchone()
 
-    cur.execute("SELECT COUNT(*) AS count FROM students WHERE fees_balance > 0")
+    cur.execute("SELECT COUNT(*) AS count FROM pupils WHERE fees_balance > 0")
     defaulter_count = cur.fetchone()['count']
 
-    cur.execute("SELECT COUNT(*) AS count FROM students")
-    total_students = cur.fetchone()['count']
+    cur.execute("SELECT COUNT(*) AS count FROM pupils")
+    total_pupils = cur.fetchone()['count']
 
     cur.execute("""
         SELECT p.*, s.full_name, s.class
         FROM payments p
-        JOIN students s ON p.student_id=s.student_id
+        JOIN pupils s ON p.pupil_id=s.pupil_id
         ORDER BY p.payment_date DESC
         LIMIT 10
     """)
@@ -10991,12 +9563,12 @@ def bursar_dashboard():
         'bursar/dashboard.html',
         totals=totals,
         defaulter_count=defaulter_count,
-        total_students=total_students,
+        total_pupils=total_pupils,
         recent_payments=recent_payments
     )
 
-@app.route('/bursar/students')
-def bursar_students():
+@app.route('/bursar/pupils')
+def bursar_pupils():
     if not check_permission(['bursar']):
         abort(403)
     
@@ -11034,12 +9606,12 @@ def bursar_students():
     
     
     # =====================================================
-    # GET STUDENTS
+    # GET PUPILS
     # =====================================================
     
     query = """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             programme,
@@ -11048,7 +9620,7 @@ def bursar_students():
             fees_total,
             fees_paid,
             fees_balance
-        FROM students
+        FROM pupils
         WHERE 1=1
     """
     
@@ -11063,7 +9635,7 @@ def bursar_students():
     
         query += """
             AND (
-                student_id ILIKE %s
+                pupil_id ILIKE %s
                 OR full_name ILIKE %s
             )
         """
@@ -11147,7 +9719,7 @@ def bursar_students():
         params
     )
     
-    students = cur.fetchall()
+    pupils = cur.fetchall()
     
     
     # =====================================================
@@ -11156,7 +9728,7 @@ def bursar_students():
     
     cur.execute("""
         SELECT DISTINCT class
-        FROM students
+        FROM pupils
         WHERE class IS NOT NULL
         AND class != ''
         ORDER BY class
@@ -11180,9 +9752,9 @@ def bursar_students():
     # =====================================================
     
     return render_template(
-        'bursar/students.html',
+        'bursar/pupils.html',
     
-        students=students,
+        pupils=pupils,
     
         classes=classes,
     
@@ -11195,11 +9767,11 @@ def bursar_students():
         residence_filter=residence_filter
     )
 # =========================================================
-# BURSAR - STUDENT FEE CLASSIFICATION
+# BURSAR - PUPIL FEE CLASSIFICATION
 # =========================================================
 
-@app.route('/bursar/students/classification')
-def bursar_student_classification():
+@app.route('/bursar/pupils/classification')
+def bursar_pupil_classification():
 
     if not check_permission(['bursar']):
         abort(403)
@@ -11229,12 +9801,12 @@ def bursar_student_classification():
     cur = db.cursor()
 
     # =====================================================
-    # GET STUDENTS
+    # GET PUPILS
     # =====================================================
 
     query = """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             parent_phone,
@@ -11243,7 +9815,7 @@ def bursar_student_classification():
             fees_total,
             fees_paid,
             fees_balance
-        FROM students
+        FROM pupils
         WHERE 1=1
     """
 
@@ -11253,7 +9825,7 @@ def bursar_student_classification():
 
         query += """
             AND (
-                student_id ILIKE %s
+                pupil_id ILIKE %s
                 OR full_name ILIKE %s
             )
         """
@@ -11284,7 +9856,7 @@ def bursar_student_classification():
         tuple(params)
     )
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     # =====================================================
     # GET CLASSES
@@ -11292,7 +9864,7 @@ def bursar_student_classification():
 
     cur.execute("""
         SELECT DISTINCT class
-        FROM students
+        FROM pupils
         WHERE class IS NOT NULL
         AND class != ''
         ORDER BY class
@@ -11317,7 +9889,7 @@ def bursar_student_classification():
             year,
             amount,
             description
-        FROM student_fee_structure
+        FROM pupil_fee_structure
         WHERE term = %s
         AND year = %s
         ORDER BY
@@ -11342,8 +9914,8 @@ def bursar_student_classification():
     cur.close()
 
     return render_template(
-        'bursar/student_classification.html',
-        students=students,
+        'bursar/pupil_classification.html',
+        pupils=pupils,
         classes=classes,
         fee_structures=fee_structures,
         year=year,
@@ -11353,16 +9925,16 @@ def bursar_student_classification():
     )
 
 @app.route(
-    '/bursar/students/classification/update',
+    '/bursar/pupils/classification/update',
     methods=['POST']
 )
-def bursar_student_classification_update():
+def bursar_pupil_classification_update():
 
     if not check_permission(['bursar']):
         abort(403)
 
-    student_id = request.form.get(
-        'student_id',
+    pupil_id = request.form.get(
+        'pupil_id',
         ''
     ).strip()
 
@@ -11391,16 +9963,16 @@ def bursar_student_classification_update():
     # BASIC VALIDATION
     # =====================================================
 
-    if not student_id:
+    if not pupil_id:
 
         flash(
-            'Student ID is required.',
+            'Pupil ID is required.',
             'danger'
         )
 
         return redirect(
             url_for(
-                'bursar_student_classification',
+                'bursar_pupil_classification',
                 year=year,
                 term=term
             )
@@ -11420,7 +9992,7 @@ def bursar_student_classification_update():
 
         return redirect(
             url_for(
-                'bursar_student_classification',
+                'bursar_pupil_classification',
                 year=year,
                 term=term
             )
@@ -11438,7 +10010,7 @@ def bursar_student_classification_update():
 
         return redirect(
             url_for(
-                'bursar_student_classification',
+                'bursar_pupil_classification',
                 year=year,
                 term=term
             )
@@ -11450,32 +10022,32 @@ def bursar_student_classification_update():
     try:
 
         # =================================================
-        # GET STUDENT
+        # GET PUPIL
         # =================================================
 
         cur.execute("""
             SELECT
-                student_id,
+                pupil_id,
                 full_name,
                 class
-            FROM students
-            WHERE student_id = %s
+            FROM pupils
+            WHERE pupil_id = %s
         """, (
-            student_id,
+            pupil_id,
         ))
 
-        student = cur.fetchone()
+        pupil = cur.fetchone()
 
-        if not student:
+        if not pupil:
 
             flash(
-                'Student not found.',
+                'Pupil not found.',
                 'danger'
             )
 
             return redirect(
                 url_for(
-                    'bursar_student_classification',
+                    'bursar_pupil_classification',
                     year=year,
                     term=term
                 )
@@ -11491,21 +10063,21 @@ def bursar_student_classification_update():
         # S.6  -> S.6
         # =================================================
 
-        level = get_student_level(
-            student['class']
+        level = get_pupil_level(
+            pupil['class']
         )
 
         if not level:
 
             flash(
                 f"Could not determine the level from "
-                f"class {student['class']}.",
+                f"class {pupil['class']}.",
                 'danger'
             )
 
             return redirect(
                 url_for(
-                    'bursar_student_classification',
+                    'bursar_pupil_classification',
                     year=year,
                     term=term
                 )
@@ -11543,7 +10115,7 @@ def bursar_student_classification_update():
 
             return redirect(
                 url_for(
-                    'bursar_student_classification',
+                    'bursar_pupil_classification',
                     year=year,
                     term=term
                 )
@@ -11554,15 +10126,15 @@ def bursar_student_classification_update():
         # =================================================
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET
                 programme = %s,
                 residence = %s
-            WHERE student_id = %s
+            WHERE pupil_id = %s
         """, (
             programme,
             residence,
-            student_id
+            pupil_id
         ))
 
         db.commit()
@@ -11572,7 +10144,7 @@ def bursar_student_classification_update():
         db.rollback()
 
         flash(
-            f'Could not save student classification: {e}',
+            f'Could not save pupil classification: {e}',
             'danger'
         )
 
@@ -11580,7 +10152,7 @@ def bursar_student_classification_update():
 
         return redirect(
             url_for(
-                'bursar_student_classification',
+                'bursar_pupil_classification',
                 year=year,
                 term=term
             )
@@ -11589,8 +10161,8 @@ def bursar_student_classification_update():
     finally:
 
         cur.close()
-    success, message = apply_student_fee_structure(
-        student_id,
+    success, message = apply_pupil_fee_structure(
+        pupil_id,
         term,
         year
     )
@@ -11598,7 +10170,7 @@ def bursar_student_classification_update():
     if success:
 
         flash(
-            f"{student['full_name']}: {message}",
+            f"{pupil['full_name']}: {message}",
             'success'
         )
 
@@ -11612,15 +10184,15 @@ def bursar_student_classification_update():
 
     return redirect(
         url_for(
-            'bursar_student_classification',
+            'bursar_pupil_classification',
             year=year,
             term=term
         )
     )
 
 
-@app.route('/bursar/student/<student_id>')
-def bursar_student_detail(student_id):
+@app.route('/bursar/pupil/<pupil_id>')
+def bursar_pupil_detail(pupil_id):
 
     if not check_permission(['bursar']):
         abort(403)
@@ -11629,12 +10201,12 @@ def bursar_student_detail(student_id):
     cur = db.cursor()
 
     # =====================================================
-    # GET STUDENT
+    # GET PUPIL
     # =====================================================
 
     cur.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             parent_phone,
@@ -11643,25 +10215,25 @@ def bursar_student_detail(student_id):
             fees_total,
             fees_paid,
             fees_balance
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
     """, (
-        student_id,
+        pupil_id,
     ))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
 
         cur.close()
 
         flash(
-            'Student not found.',
+            'Pupil not found.',
             'danger'
         )
 
         return redirect(
-            url_for('bursar_students')
+            url_for('bursar_pupils')
         )
 
     # =====================================================
@@ -11678,12 +10250,12 @@ def bursar_student_detail(student_id):
             recorded_by,
             notes
         FROM payments
-        WHERE student_id=%s
+        WHERE pupil_id=%s
         ORDER BY
             payment_date DESC,
             id DESC
     """, (
-        student_id,
+        pupil_id,
     ))
 
     payments = cur.fetchall()
@@ -11698,9 +10270,9 @@ def bursar_student_detail(student_id):
     )
 
     # =====================================================
-    # DETERMINE STUDENT LEVEL
+    # DETERMINE PUPIL LEVEL
     #
-    # Students may be stored as:
+    # Pupils may be stored as:
     #
     # S.1A
     # S.1B
@@ -11713,14 +10285,14 @@ def bursar_student_detail(student_id):
     # S.6
     # =====================================================
 
-    student_class = (
-        student['class'] or ''
+    pupil_class = (
+        pupil['class'] or ''
     ).strip().upper()
 
-    level = student_class
+    level = pupil_class
 
     # -----------------------------------------------------
-    # STREAMED O-LEVEL STUDENT
+    # STREAMED O-LEVEL PUPIL
     #
     # S.1A -> S.1
     # S.2B -> S.2
@@ -11728,7 +10300,7 @@ def bursar_student_detail(student_id):
 
     match = re.match(
         r'^(S\.[1-6])',
-        student_class
+        pupil_class
     )
 
     if match:
@@ -11772,12 +10344,12 @@ def bursar_student_detail(student_id):
     # =====================================================
 
     selected_programme = (
-        student['programme']
+        pupil['programme']
         or ''
     ).strip()
 
     selected_residence = (
-        student['residence']
+        pupil['residence']
         or ''
     ).strip()
 
@@ -11842,7 +10414,7 @@ def bursar_student_detail(student_id):
                 id,
                 amount,
                 description
-            FROM student_fee_structure
+            FROM pupil_fee_structure
             WHERE level=%s
             AND programme=%s
             AND residence=%s
@@ -11873,18 +10445,18 @@ def bursar_student_detail(student_id):
             )
 
     # =====================================================
-    # STORED STUDENT FEE TOTAL
+    # STORED PUPIL FEE TOTAL
     # =====================================================
 
     stored_fees_total = float(
-        student['fees_total'] or 0
+        pupil['fees_total'] or 0
     )
 
     # =====================================================
     # DETERMINE EFFECTIVE FEE TOTAL
     #
     # If a matching fee structure exists, use it.
-    # Otherwise use student's stored fees_total.
+    # Otherwise use pupil's stored fees_total.
     # =====================================================
 
     if applicable_fee is not None:
@@ -11905,7 +10477,7 @@ def bursar_student_detail(student_id):
     )
 
     # =====================================================
-    # KEEP STUDENT FEE FIGURES SYNCHRONIZED
+    # KEEP PUPIL FEE FIGURES SYNCHRONIZED
     #
     # Only update when the calculated values differ.
     # =====================================================
@@ -11914,28 +10486,28 @@ def bursar_student_detail(student_id):
         abs(stored_fees_total - fees_total) > 0.001
         or
         abs(
-            float(student['fees_paid'] or 0)
+            float(pupil['fees_paid'] or 0)
             - total_paid
         ) > 0.001
         or
         abs(
-            float(student['fees_balance'] or 0)
+            float(pupil['fees_balance'] or 0)
             - fees_balance
         ) > 0.001
     ):
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET
                 fees_total=%s,
                 fees_paid=%s,
                 fees_balance=%s
-            WHERE student_id=%s
+            WHERE pupil_id=%s
         """, (
             fees_total,
             total_paid,
             fees_balance,
-            student_id
+            pupil_id
         ))
 
         db.commit()
@@ -11947,9 +10519,9 @@ def bursar_student_detail(student_id):
     # =====================================================
 
     return render_template(
-        'bursar/student_detail.html',
+        'bursar/pupil_detail.html',
 
-        student=student,
+        pupil=pupil,
 
         payments=payments,
 
@@ -11982,10 +10554,10 @@ def bursar_student_detail(student_id):
 
 
 @app.route(
-    '/bursar/student/<student_id>/fee-details',
+    '/bursar/pupil/<pupil_id>/fee-details',
     methods=['POST']
 )
-def bursar_student_fee_details(student_id):
+def bursar_pupil_fee_details(pupil_id):
 
     if not check_permission(['bursar']):
         abort(403)
@@ -12020,8 +10592,8 @@ def bursar_student_fee_details(student_id):
 
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12037,15 +10609,15 @@ def bursar_student_fee_details(student_id):
 
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
     return redirect(
         url_for(
-            'bursar_student_detail',
-            student_id=student_id,
+            'bursar_pupil_detail',
+            pupil_id=pupil_id,
             programme=programme,
             residence=residence,
             term=term,
@@ -12085,7 +10657,7 @@ def bursar_fees():
             amount,
             description,
             created_at
-        FROM student_fee_structure
+        FROM pupil_fee_structure
         WHERE year = %s
         AND term = %s
         ORDER BY
@@ -12116,7 +10688,7 @@ def bursar_fees():
         term=term
     )
 
-# ADD STUDENT FEE STRUCTURE
+# ADD PUPIL FEE STRUCTURE
 @app.route('/bursar/fees/add', methods=['POST'])
 def bursar_fees_add():
 
@@ -12260,7 +10832,7 @@ def bursar_fees_add():
     try:
 
         cur.execute("""
-            INSERT INTO student_fee_structure (
+            INSERT INTO pupil_fee_structure (
                 level,
                 programme,
                 residence,
@@ -12294,7 +10866,7 @@ def bursar_fees_add():
 
         db.rollback()
 
-        if 'student_fee_structure' in str(e) and (
+        if 'pupil_fee_structure' in str(e) and (
             'unique' in str(e).lower()
             or 'duplicate' in str(e).lower()
         ):
@@ -12331,7 +10903,7 @@ def bursar_fees_delete(fee_id):
     try:
 
         cur.execute("""
-            DELETE FROM student_fee_structure
+            DELETE FROM pupil_fee_structure
             WHERE id = %s
         """, (
             fee_id,
@@ -12371,8 +10943,8 @@ def bursar_record_payment():
     # GET FORM DATA
     # =====================================================
 
-    student_id = request.form.get(
-        'student_id',
+    pupil_id = request.form.get(
+        'pupil_id',
         ''
     ).strip()
 
@@ -12392,18 +10964,18 @@ def bursar_record_payment():
     ).strip()
 
     # =====================================================
-    # VALIDATE STUDENT ID
+    # VALIDATE PUPIL ID
     # =====================================================
 
-    if not student_id:
+    if not pupil_id:
 
         flash(
-            'Student ID is required.',
+            'Pupil ID is required.',
             'danger'
         )
 
         return redirect(
-            url_for('bursar_students')
+            url_for('bursar_pupils')
         )
 
     # =====================================================
@@ -12426,8 +10998,8 @@ def bursar_record_payment():
 
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12437,33 +11009,33 @@ def bursar_record_payment():
     try:
 
         # =================================================
-        # GET STUDENT
+        # GET PUPIL
         # =================================================
 
         cur.execute("""
             SELECT
-                student_id,
+                pupil_id,
                 full_name,
                 parent_phone,
                 COALESCE(fees_total, 0) AS fees_total
-            FROM students
-            WHERE student_id=%s
+            FROM pupils
+            WHERE pupil_id=%s
             FOR UPDATE
         """, (
-            student_id,
+            pupil_id,
         ))
 
-        student = cur.fetchone()
+        pupil = cur.fetchone()
 
-        if not student:
+        if not pupil:
 
             flash(
-                'Student not found.',
+                'Pupil not found.',
                 'danger'
             )
 
             return redirect(
-                url_for('bursar_students')
+                url_for('bursar_pupils')
             )
 
         # =================================================
@@ -12479,9 +11051,9 @@ def bursar_record_payment():
                     0
                 ) AS total_paid
             FROM payments
-            WHERE student_id=%s
+            WHERE pupil_id=%s
         """, (
-            student_id,
+            pupil_id,
         ))
 
         payment_summary = cur.fetchone()
@@ -12495,7 +11067,7 @@ def bursar_record_payment():
         # =================================================
 
         fees_total = float(
-            student['fees_total'] or 0
+            pupil['fees_total'] or 0
         )
 
         new_paid = current_paid + amount
@@ -12517,8 +11089,8 @@ def bursar_record_payment():
 
             return redirect(
                 url_for(
-                    'bursar_student_detail',
-                    student_id=student_id
+                    'bursar_pupil_detail',
+                    pupil_id=pupil_id
                 )
             )
 
@@ -12535,7 +11107,7 @@ def bursar_record_payment():
         cur.execute("""
             INSERT INTO payments
             (
-                student_id,
+                pupil_id,
                 amount,
                 payment_date,
                 receipt_no,
@@ -12554,7 +11126,7 @@ def bursar_record_payment():
                 %s
             )
         """, (
-            student_id,
+            pupil_id,
             amount,
             receipt_no,
             payment_method,
@@ -12575,9 +11147,9 @@ def bursar_record_payment():
                     0
                 ) AS total_paid
             FROM payments
-            WHERE student_id=%s
+            WHERE pupil_id=%s
         """, (
-            student_id,
+            pupil_id,
         ))
 
         payment_summary = cur.fetchone()
@@ -12596,19 +11168,19 @@ def bursar_record_payment():
         )
 
         # =================================================
-        # UPDATE STUDENT FEE FIGURES
+        # UPDATE PUPIL FEE FIGURES
         # =================================================
 
         cur.execute("""
-            UPDATE students
+            UPDATE pupils
             SET
                 fees_paid=%s,
                 fees_balance=%s
-            WHERE student_id=%s
+            WHERE pupil_id=%s
         """, (
             total_paid,
             fees_balance,
-            student_id
+            pupil_id
         ))
 
         # =================================================
@@ -12628,8 +11200,8 @@ def bursar_record_payment():
 
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12637,13 +11209,13 @@ def bursar_record_payment():
 
         cur.close()
 
-    if student['parent_phone']:
+    if pupil['parent_phone']:
 
         try:
 
             send_fee_sms(
-                student['parent_phone'],
-                student['full_name'],
+                pupil['parent_phone'],
+                pupil['full_name'],
                 amount,
                 fees_balance
             )
@@ -12666,8 +11238,8 @@ def bursar_record_payment():
 
     return redirect(
         url_for(
-            'bursar_student_detail',
-            student_id=student_id
+            'bursar_pupil_detail',
+            pupil_id=pupil_id
         )
     )
 
@@ -12677,7 +11249,7 @@ def bursar_create_payment_request():
     if not check_permission(['bursar']):
         abort(403)
 
-    student_id = request.form.get('student_id', '').strip()
+    pupil_id = request.form.get('pupil_id', '').strip()
     amount_raw = request.form.get('amount', '').strip()
     term = request.form.get('term', 'Term 1').strip()
     year = request.form.get(
@@ -12686,9 +11258,9 @@ def bursar_create_payment_request():
         type=int
     )
 
-    if not student_id:
-        flash('Student is required.', 'danger')
-        return redirect(url_for('bursar_students'))
+    if not pupil_id:
+        flash('Pupil is required.', 'danger')
+        return redirect(url_for('bursar_pupils'))
 
     try:
         amount = float(amount_raw)
@@ -12696,8 +11268,8 @@ def bursar_create_payment_request():
         flash('Invalid payment amount.', 'danger')
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12708,8 +11280,8 @@ def bursar_create_payment_request():
         )
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12719,31 +11291,31 @@ def bursar_create_payment_request():
     try:
 
         # ============================================
-        # GET STUDENT
+        # GET PUPIL
         # ============================================
 
         cur.execute("""
             SELECT
-                student_id,
+                pupil_id,
                 full_name,
                 fees_balance
-            FROM students
-            WHERE student_id=%s
-        """, (student_id,))
+            FROM pupils
+            WHERE pupil_id=%s
+        """, (pupil_id,))
 
-        student = cur.fetchone()
+        pupil = cur.fetchone()
 
-        if not student:
+        if not pupil:
             flash(
-                'Student not found.',
+                'Pupil not found.',
                 'danger'
             )
             return redirect(
-                url_for('bursar_students')
+                url_for('bursar_pupils')
             )
 
         balance = float(
-            student['fees_balance'] or 0
+            pupil['fees_balance'] or 0
         )
 
         # ============================================
@@ -12752,13 +11324,13 @@ def bursar_create_payment_request():
 
         if balance <= 0:
             flash(
-                'This student has no outstanding balance.',
+                'This pupil has no outstanding balance.',
                 'warning'
             )
             return redirect(
                 url_for(
-                    'bursar_student_detail',
-                    student_id=student_id
+                    'bursar_pupil_detail',
+                    pupil_id=pupil_id
                 )
             )
 
@@ -12770,8 +11342,8 @@ def bursar_create_payment_request():
             )
             return redirect(
                 url_for(
-                    'bursar_student_detail',
-                    student_id=student_id
+                    'bursar_pupil_detail',
+                    pupil_id=pupil_id
                 )
             )
 
@@ -12789,7 +11361,7 @@ def bursar_create_payment_request():
             INSERT INTO fee_payment_requests
             (
                 prn,
-                student_id,
+                pupil_id,
                 amount,
                 term,
                 year,
@@ -12808,7 +11380,7 @@ def bursar_create_payment_request():
             )
         """, (
             prn,
-            student_id,
+            pupil_id,
             amount,
             term,
             year,
@@ -12837,13 +11409,13 @@ def bursar_create_payment_request():
 
     return redirect(
         url_for(
-            'bursar_student_detail',
-            student_id=student_id
+            'bursar_pupil_detail',
+            pupil_id=pupil_id
         )
     )
 
-@app.route('/bursar/student/<student_id>/generate_prn', methods=['POST'])
-def bursar_generate_fee_prn(student_id):
+@app.route('/bursar/pupil/<pupil_id>/generate_prn', methods=['POST'])
+def bursar_generate_fee_prn(pupil_id):
 
     if not check_permission(['bursar']):
         abort(403)
@@ -12851,22 +11423,22 @@ def bursar_generate_fee_prn(student_id):
     db = get_db_dict()
     cur = db.cursor()
 
-    # Get student
+    # Get pupil
     cur.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             fees_balance
-        FROM students
-        WHERE student_id=%s
-    """, (student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """, (pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         cur.close()
-        flash('Student not found.', 'danger')
-        return redirect(url_for('bursar_students'))
+        flash('Pupil not found.', 'danger')
+        return redirect(url_for('bursar_pupils'))
 
     # Get submitted details
     amount_raw = request.form.get('amount', '').strip()
@@ -12882,8 +11454,8 @@ def bursar_generate_fee_prn(student_id):
         flash('Please enter the amount.', 'danger')
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12894,8 +11466,8 @@ def bursar_generate_fee_prn(student_id):
         flash('Invalid payment amount.', 'danger')
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12904,21 +11476,21 @@ def bursar_generate_fee_prn(student_id):
         flash('Payment amount must be greater than zero.', 'danger')
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
     # Check outstanding balance
-    balance = float(student['fees_balance'] or 0)
+    balance = float(pupil['fees_balance'] or 0)
 
     if balance <= 0:
         cur.close()
-        flash('This student has no outstanding fees.', 'warning')
+        flash('This pupil has no outstanding fees.', 'warning')
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12931,8 +11503,8 @@ def bursar_generate_fee_prn(student_id):
         )
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12967,8 +11539,8 @@ def bursar_generate_fee_prn(student_id):
 
         return redirect(
             url_for(
-                'bursar_student_detail',
-                student_id=student_id
+                'bursar_pupil_detail',
+                pupil_id=pupil_id
             )
         )
 
@@ -12980,7 +11552,7 @@ def bursar_generate_fee_prn(student_id):
         INSERT INTO fee_payment_requests
         (
             prn,
-            student_id,
+            pupil_id,
             amount,
             term,
             year,
@@ -13002,7 +11574,7 @@ def bursar_generate_fee_prn(student_id):
         RETURNING id
     """, (
         prn,
-        student_id,
+        pupil_id,
         amount,
         term,
         year,
@@ -13039,7 +11611,7 @@ def bursar_fee_prn(request_id):
         SELECT
             f.id,
             f.prn,
-            f.student_id,
+            f.pupil_id,
             f.amount,
             f.term,
             f.year,
@@ -13057,8 +11629,8 @@ def bursar_fee_prn(request_id):
 
         FROM fee_payment_requests f
 
-        JOIN students s
-            ON s.student_id = f.student_id
+        JOIN pupils s
+            ON s.pupil_id = f.pupil_id
 
         WHERE f.id=%s
     """, (request_id,))
@@ -13074,7 +11646,7 @@ def bursar_fee_prn(request_id):
         )
 
         return redirect(
-            url_for('bursar_students')
+            url_for('bursar_pupils')
         )
 
     return render_template(
@@ -13101,15 +11673,15 @@ def bursar_print_payment_prn(request_id):
             fpr.payment_method,
             fpr.created_at,
 
-            s.student_id,
+            s.pupil_id,
             s.full_name,
             s.class,
             s.parent_phone
 
         FROM fee_payment_requests fpr
 
-        JOIN students s
-            ON s.student_id = fpr.student_id
+        JOIN pupils s
+            ON s.pupil_id = fpr.pupil_id
 
         WHERE fpr.id=%s
     """, (request_id,))
@@ -13126,7 +11698,7 @@ def bursar_print_payment_prn(request_id):
         )
 
         return redirect(
-            url_for('bursar_students')
+            url_for('bursar_pupils')
         )
 
     # --------------------------------------------
@@ -13189,8 +11761,8 @@ def bursar_print_receipts():
                     s.full_name,
                     s.class
                 FROM payments p
-                JOIN students s
-                    ON p.student_id = s.student_id
+                JOIN pupils s
+                    ON p.pupil_id = s.pupil_id
                 WHERE p.id IN ({placeholders})
                 ORDER BY p.payment_date DESC
             """, ids)
@@ -13266,8 +11838,8 @@ def bursar_print_receipts():
     )
 
 
-@app.route('/bursar/send_reminder/<student_id>')
-def bursar_send_reminder(student_id):
+@app.route('/bursar/send_reminder/<pupil_id>')
+def bursar_send_reminder(pupil_id):
     if not check_permission(['bursar']):
         abort(403)
 
@@ -13276,23 +11848,23 @@ def bursar_send_reminder(student_id):
 
     cur.execute("""
         SELECT full_name, parent_phone, fees_balance
-        FROM students
-        WHERE student_id=%s
-    """, (student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """, (pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
     cur.close()
 
-    if student and student['parent_phone']:
+    if pupil and pupil['parent_phone']:
         send_sms(
-            student['parent_phone'],
-            f"Fees reminder: UGX {student['fees_balance']:,.2f} outstanding for {student['full_name']}."
+            pupil['parent_phone'],
+            f"Fees reminder: UGX {pupil['fees_balance']:,.2f} outstanding for {pupil['full_name']}."
         )
         flash('Reminder sent.', 'success')
     else:
         flash('No parent phone.', 'warning')
 
-    return redirect(url_for('bursar_student_detail', student_id=student_id))
+    return redirect(url_for('bursar_pupil_detail', pupil_id=pupil_id))
 
 @app.route('/bursar/bulk_reminder', methods=['POST'])
 def bursar_bulk_reminder():
@@ -13306,7 +11878,7 @@ def bursar_bulk_reminder():
 
     query = """
         SELECT full_name, parent_phone, fees_balance
-        FROM students
+        FROM pupils
         WHERE fees_balance > 0
     """
 
@@ -13317,12 +11889,12 @@ def bursar_bulk_reminder():
         params.append(class_filter)
 
     cur.execute(query, params)
-    students = cur.fetchall()
+    pupils = cur.fetchall()
     cur.close()
 
     sent = 0
 
-    for s in students:
+    for s in pupils:
         if s['parent_phone']:
             send_sms(
                 s['parent_phone'],
@@ -13331,10 +11903,10 @@ def bursar_bulk_reminder():
             sent += 1
 
     flash(f'{sent} reminders sent.', 'success')
-    return redirect(url_for('bursar_students'))
+    return redirect(url_for('bursar_pupils'))
 
-@app.route('/bursar/clearance/<student_id>')
-def bursar_clearance(student_id):
+@app.route('/bursar/clearance/<pupil_id>')
+def bursar_clearance(pupil_id):
 
     if not check_permission(['bursar']):
         abort(403)
@@ -13343,12 +11915,12 @@ def bursar_clearance(student_id):
     cur = db.cursor()
 
     # ==============================
-    # GET STUDENT
+    # GET PUPIL
     # ==============================
 
     cur.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             parent_phone,
@@ -13357,19 +11929,19 @@ def bursar_clearance(student_id):
             fees_paid,
             photo_path,
             admission_date
-        FROM students
-        WHERE student_id=%s
-    """, (student_id,))
+        FROM pupils
+        WHERE pupil_id=%s
+    """, (pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         cur.close()
 
-        flash('Student not found', 'danger')
+        flash('Pupil not found', 'danger')
 
         return redirect(
-            url_for('bursar_students')
+            url_for('bursar_pupils')
         )
 
     # ==============================
@@ -13410,24 +11982,24 @@ def bursar_clearance(student_id):
     # FEES
     # ==============================
 
-    student['fees_total'] = (
-        student.get('fees_total') or 0
+    pupil['fees_total'] = (
+        pupil.get('fees_total') or 0
     )
 
-    student['fees_paid'] = (
-        student.get('fees_paid') or 0
+    pupil['fees_paid'] = (
+        pupil.get('fees_paid') or 0
     )
 
-    student['fees_balance'] = (
-        student.get('fees_balance') or 0
+    pupil['fees_balance'] = (
+        pupil.get('fees_balance') or 0
     )
 
     # ==============================
-    # STUDENT PHOTO
+    # PUPIL PHOTO
     # ==============================
 
-    student['photo_url'] = get_photo_url(
-        student.get('photo_path')
+    pupil['photo_url'] = get_photo_url(
+        pupil.get('photo_path')
     )
 
     # ==============================
@@ -13454,7 +12026,7 @@ def bursar_clearance(student_id):
 
     return render_template(
         'bursar/clearance.html',
-        student=student,
+        pupil=pupil,
         school=school,
         school_settings=school,
         logo_url=logo_url,
@@ -13476,12 +12048,12 @@ def bursar_bulk_clearance():
     cur = db.cursor()
 
     # ==============================
-    # GET CLEARED STUDENTS
+    # GET CLEARED PUPILS
     # ==============================
 
     query = """
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             parent_phone,
@@ -13489,7 +12061,7 @@ def bursar_bulk_clearance():
             fees_total,
             fees_paid,
             photo_path
-        FROM students
+        FROM pupils
         WHERE COALESCE(fees_balance, 0) <= 0
     """
 
@@ -13509,7 +12081,7 @@ def bursar_bulk_clearance():
 
     cur.execute(query, params)
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     # ==============================
     # GET SCHOOL SETTINGS
@@ -13546,10 +12118,10 @@ def bursar_bulk_clearance():
         }
 
     # ==============================
-    # PREPARE STUDENTS
+    # PREPARE PUPILS
     # ==============================
 
-    for s in students:
+    for s in pupils:
 
         s['fees_total'] = (
             s.get('fees_total') or 0
@@ -13591,45 +12163,45 @@ def bursar_bulk_clearance():
 
     return render_template(
         'bursar/bulk_clearance.html',
-        students=students,
+        pupils=pupils,
         class_filter=class_filter,
         school=school,
         logo_url=logo_url,
         stamp_url=stamp_url
     )
-@app.route('/bursar/clear_student/<student_id>', methods=['POST'])
-def clear_student(student_id):
+@app.route('/bursar/clear_pupil/<pupil_id>', methods=['POST'])
+def clear_pupil(pupil_id):
     if not check_permission(['bursar']):
         abort(403)
 
     db = get_db_dict()
     cur = db.cursor()
 
-    # Check student's fees
+    # Check pupil's fees
     cur.execute("""
         SELECT fees_balance
-        FROM students
-        WHERE student_id = %s
-    """, (student_id,))
+        FROM pupils
+        WHERE pupil_id = %s
+    """, (pupil_id,))
 
-    student = cur.fetchone()
+    pupil = cur.fetchone()
 
-    if not student:
+    if not pupil:
         cur.close()
-        flash('Student not found.', 'danger')
-        return redirect(url_for('bursar_students'))
+        flash('Pupil not found.', 'danger')
+        return redirect(url_for('bursar_pupils'))
 
-    fees_balance = student.get('fees_balance') or 0
+    fees_balance = pupil.get('fees_balance') or 0
 
-    # Student cannot be cleared while owing fees
+    # Pupil cannot be cleared while owing fees
     if fees_balance > 0:
         cur.close()
         flash(
-            'Student cannot be cleared because there is an outstanding fees balance.',
+            'Pupil cannot be cleared because there is an outstanding fees balance.',
             'danger'
         )
         return redirect(
-            url_for('bursar_clearance', student_id=student_id)
+            url_for('bursar_clearance', pupil_id=pupil_id)
         )
 
     # Get logged-in bursar's user ID
@@ -13639,8 +12211,8 @@ def clear_student(student_id):
 
     # Create or update clearance record
     cur.execute("""
-        INSERT INTO student_clearance (
-            student_id,
+        INSERT INTO pupil_clearance (
+            pupil_id,
             clearance_status,
             cleared_by,
             cleared_at,
@@ -13648,14 +12220,14 @@ def clear_student(student_id):
         )
         VALUES (%s, 'cleared', %s, CURRENT_TIMESTAMP, %s)
 
-        ON CONFLICT (student_id)
+        ON CONFLICT (pupil_id)
         DO UPDATE SET
             clearance_status = 'cleared',
             cleared_by = EXCLUDED.cleared_by,
             cleared_at = CURRENT_TIMESTAMP,
             remarks = EXCLUDED.remarks
     """, (
-        student_id,
+        pupil_id,
         user_id,
         remarks
     ))
@@ -13663,10 +12235,10 @@ def clear_student(student_id):
     db.commit()
     cur.close()
 
-    flash('Student cleared successfully.', 'success')
+    flash('Pupil cleared successfully.', 'success')
 
     return redirect(
-        url_for('bursar_clearance', student_id=student_id)
+        url_for('bursar_clearance', pupil_id=pupil_id)
     )
 @app.route('/bursar/webhook/process')
 def bursar_process_webhooks():
@@ -13678,21 +12250,21 @@ def bursar_process_webhooks():
     webhooks = cur.fetchall()
     processed = 0
     for w in webhooks:
-        if w.get('student_id'):
-            cur.execute("SELECT full_name, parent_phone, fees_paid, fees_balance FROM students WHERE student_id=%s", (w['student_id'],))
-            student = cur.fetchone()
-            if student:
+        if w.get('pupil_id'):
+            cur.execute("SELECT full_name, parent_phone, fees_paid, fees_balance FROM pupils WHERE pupil_id=%s", (w['pupil_id'],))
+            pupil = cur.fetchone()
+            if pupil:
                 receipt_no = generate_receipt_number()
                 cur.execute("""
                     INSERT INTO payments 
-                    (student_id, amount, payment_date, receipt_no, payment_method, notes, recorded_by)
+                    (pupil_id, amount, payment_date, receipt_no, payment_method, notes, recorded_by)
                     VALUES (%s, %s, CURRENT_DATE, %s, %s, %s, %s)
-                """,(w['student_id'],w['amount'],receipt_no,w.get('payment_method','Mobile Money'),f"Auto from webhook: {w.get('transaction_id','')}",'System'))
-                new_paid = (student['fees_paid'] or 0) + w['amount']
-                new_balance = (student['fees_balance'] or 0) - w['amount']
-                cur.execute("UPDATE students SET fees_paid=%s, fees_balance=%s WHERE student_id=%s",(new_paid,new_balance,w['student_id']))
-                if student.get('parent_phone'):
-                    send_fee_sms(student['parent_phone'],student['full_name'],w['amount'],new_balance)
+                """,(w['pupil_id'],w['amount'],receipt_no,w.get('payment_method','Mobile Money'),f"Auto from webhook: {w.get('transaction_id','')}",'System'))
+                new_paid = (pupil['fees_paid'] or 0) + w['amount']
+                new_balance = (pupil['fees_balance'] or 0) - w['amount']
+                cur.execute("UPDATE pupils SET fees_paid=%s, fees_balance=%s WHERE pupil_id=%s",(new_paid,new_balance,w['pupil_id']))
+                if pupil.get('parent_phone'):
+                    send_fee_sms(pupil['parent_phone'],pupil['full_name'],w['amount'],new_balance)
         cur.execute("UPDATE payment_webhooks SET processed=1 WHERE id=%s",(w['id'],))
         processed += 1
     db.commit()
@@ -13707,9 +12279,9 @@ def bursar_payment_webhook():
         return jsonify({'error':'Invalid data'}),400
     execute_db("""
         INSERT INTO payment_webhooks 
-        (transaction_id, amount, phone_number, student_id, reference, payment_method, raw_data, status, processed)
+        (transaction_id, amount, phone_number, pupil_id, reference, payment_method, raw_data, status, processed)
         VALUES (%s,%s,%s,%s,%s,%s,%s,'received',0)
-    """,(data.get('transaction_id'),data.get('amount'),data.get('phone_number'),data.get('student_id'),data.get('reference'),data.get('payment_method'),json.dumps(data)))
+    """,(data.get('transaction_id'),data.get('amount'),data.get('phone_number'),data.get('pupil_id'),data.get('reference'),data.get('payment_method'),json.dumps(data)))
     return jsonify({'status':'received'}),200
 
 def generate_staff_no():
@@ -14136,12 +12708,12 @@ def bursar_print_fees_list():
 
         query = """
             SELECT 
-                student_id,
+                pupil_id,
                 full_name,
                 class,
                 fees_paid,
                 fees_balance
-            FROM students
+            FROM pupils
             WHERE fees_balance > 0
         """
 
@@ -14149,12 +12721,12 @@ def bursar_print_fees_list():
 
         query = """
             SELECT 
-                student_id,
+                pupil_id,
                 full_name,
                 class,
                 fees_paid,
                 fees_balance
-            FROM students
+            FROM pupils
             WHERE 1=1
         """
 
@@ -14168,23 +12740,23 @@ def bursar_print_fees_list():
 
     cur.execute(query, params)
 
-    students = cur.fetchall()
+    pupils = cur.fetchall()
 
     cur.close()
 
     total_paid = sum(
         s['fees_paid'] or 0
-        for s in students
+        for s in pupils
     )
 
     total_balance = sum(
         s['fees_balance'] or 0
-        for s in students
+        for s in pupils
     )
 
     return render_template(
         'bursar/print_fees_list.html',
-        students=students,
+        pupils=pupils,
         class_filter=class_filter,
         status_filter=status_filter,
         total_paid=total_paid,
@@ -15182,29 +13754,29 @@ def headteacher_view_payroll(payroll_id):
     cur.close()
     return render_template('headteacher/view_payroll.html',payroll=payroll,staff_list=staff_list)
 
-@app.route('/headteacher/students')
-def headteacher_students():
+@app.route('/headteacher/pupils')
+def headteacher_pupils():
     if not check_permission(['headteacher']):
         abort(403)
     db=get_db_dict()
     cur=db.cursor()
     cur.execute("""
-        SELECT student_id,full_name,class,parent_phone,admission_status,fees_balance
-        FROM students
+        SELECT pupil_id,full_name,class,parent_phone,admission_status,fees_balance
+        FROM pupils
         WHERE admission_status='approved'
         ORDER BY class,full_name
     """)
-    students=cur.fetchall()
-    cur.execute("SELECT DISTINCT class FROM students WHERE class IS NOT NULL AND class!='' ORDER BY class")
+    pupils=cur.fetchall()
+    cur.execute("SELECT DISTINCT class FROM pupils WHERE class IS NOT NULL AND class!='' ORDER BY class")
     classes=[row['class'] for row in cur.fetchall()]
     cur.close()
-    return render_template('headteacher/students.html',students=students,classes=classes)
+    return render_template('headteacher/pupils.html',pupils=pupils,classes=classes)
 
 @app.route('/headteacher/update_comment',methods=['POST'])
 def headteacher_update_comment():
     if not check_permission(['headteacher']):
         abort(403)
-    student_id=request.form['student_id']
+    pupil_id=request.form['pupil_id']
     term=request.form['term']
     year=request.form['year']
     comment=request.form.get('comment','').strip()
@@ -15212,14 +13784,14 @@ def headteacher_update_comment():
     final_comment=custom if custom else comment
     execute_db("""
         INSERT INTO teacher_comments
-        (student_id,term,year,headteacher_comment,headteacher_comment_locked)
+        (pupil_id,term,year,headteacher_comment,headteacher_comment_locked)
         VALUES (%s,%s,%s,%s,1)
-        ON CONFLICT(student_id,term,year)
+        ON CONFLICT(pupil_id,term,year)
         DO UPDATE SET headteacher_comment=%s,
         headteacher_comment_locked=1
-    """,(student_id,term,year,final_comment,final_comment))
+    """,(pupil_id,term,year,final_comment,final_comment))
     flash('Headteacher comment saved and locked.','success')
-    return redirect(url_for('teacher_report_card',student_id=student_id,term=term,year=year))
+    return redirect(url_for('teacher_report_card',pupil_id=pupil_id,term=term,year=year))
 
 @app.route('/management/pending')
 def management_pending_authorizations():
@@ -15550,7 +14122,7 @@ def parent_dashboard():
 
     cursor.execute("""
         SELECT
-            student_id,
+            pupil_id,
             full_name,
             class,
             photo_path,
@@ -15559,7 +14131,7 @@ def parent_dashboard():
             fees_balance,
             payment_status
 
-        FROM students
+        FROM pupils
 
         WHERE parent_id=%s
 
@@ -15579,9 +14151,9 @@ def parent_dashboard():
 import random
 
 
-@app.route('/parent/generate_prn/<student_id>')
+@app.route('/parent/generate_prn/<pupil_id>')
 @login_required
-def generate_prn(student_id):
+def generate_prn(pupil_id):
 
     parent_id=session['user_id']
 
@@ -15591,21 +14163,21 @@ def generate_prn(student_id):
 
     cursor.execute("""
         SELECT fees_balance
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         AND parent_id=%s
 
-    """,(student_id,parent_id))
+    """,(pupil_id,parent_id))
 
 
-    student=cursor.fetchone()
+    pupil=cursor.fetchone()
 
 
-    if not student:
+    if not pupil:
         abort(403)
 
 
-    balance=student[0]
+    balance=pupil[0]
 
 
     prn="PRN"+str(random.randint(100000000,999999999))
@@ -15613,11 +14185,11 @@ def generate_prn(student_id):
 
     cursor.execute("""
         INSERT INTO payment_requests
-        (student_id,prn,amount)
+        (pupil_id,prn,amount)
 
         VALUES(%s,%s,%s)
 
-    """,(student_id,prn,balance))
+    """,(pupil_id,prn,balance))
 
 
     db.commit()
@@ -15630,9 +14202,9 @@ def generate_prn(student_id):
     )
 
 
-@app.route('/parent/fees/<student_id>')
+@app.route('/parent/fees/<pupil_id>')
 @login_required
-def parent_fees(student_id):
+def parent_fees(pupil_id):
 
     parent_id=session['user_id']
 
@@ -15647,12 +14219,12 @@ def parent_fees(student_id):
             fees_paid,
             fees_balance
 
-        FROM students
+        FROM pupils
 
-        WHERE student_id=%s
+        WHERE pupil_id=%s
         AND parent_id=%s
 
-    """,(student_id,parent_id))
+    """,(pupil_id,parent_id))
 
 
     fees=cursor.fetchone()
@@ -15668,9 +14240,9 @@ def parent_fees(student_id):
         fees=fees
     )
 
-@app.route('/parent/report_card/<student_id>')
+@app.route('/parent/report_card/<pupil_id>')
 @login_required
-def parent_report_card(student_id):
+def parent_report_card(pupil_id):
 
     parent_id=session['user_id']
 
@@ -15681,17 +14253,17 @@ def parent_report_card(student_id):
     # confirm ownership
     cursor.execute("""
         SELECT *
-        FROM students
-        WHERE student_id=%s
+        FROM pupils
+        WHERE pupil_id=%s
         AND parent_id=%s
 
-    """,(student_id,parent_id))
+    """,(pupil_id,parent_id))
 
 
-    student=cursor.fetchone()
+    pupil=cursor.fetchone()
 
 
-    if not student:
+    if not pupil:
         abort(403)
 
 
@@ -15700,11 +14272,11 @@ def parent_report_card(student_id):
         SELECT *
         FROM marks
 
-        WHERE student_id=%s
+        WHERE pupil_id=%s
 
         ORDER BY subject
 
-    """,(student_id,))
+    """,(pupil_id,))
 
 
     marks=cursor.fetchall()
@@ -15713,7 +14285,7 @@ def parent_report_card(student_id):
 
     return render_template(
         'parent/report_card.html',
-        student=student,
+        pupil=pupil,
         marks=marks
     )
 
@@ -15814,198 +14386,6 @@ def check_low_stock_alerts():
 
     cur.close()
     
-@app.route('/attendance/scanner')
-def attendance_scanner():
-
-    if not check_permission(['dos', 'headteacher', 'classteacher']):
-        abort(403)
-
-    return render_template('attendance/scanner.html')
-
-@app.route('/attendance/scan', methods=['POST'])
-def attendance_scan():
-    if not check_permission(['dos', 'headteacher', 'classteacher']):
-        abort(403)
-    data = request.get_json()
-    if not data:
-        return jsonify({
-            'success': False,
-            'message': 'Invalid request.'
-        }), 400
-
-    qr_token = data.get('qr_token')
-    mode = data.get('mode')
-    if not qr_token:
-        return jsonify({
-            'success': False,
-            'message': 'QR code was not received.'
-        }), 400
-
-    if mode not in ['clock_in', 'clock_out']:
-        return jsonify({
-            'success': False,
-            'message': 'Invalid attendance mode.'
-        }), 400
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute("""
-        SELECT
-            student_id,
-            full_name,
-            class,
-            sex
-        FROM students
-        WHERE qr_token = %s
-    """, (qr_token,))
-
-    student = cur.fetchone()
-    if not student:
-        cur.close()
-        return jsonify({
-            'success': False,
-            'message': 'Student not found.'
-        }), 404
-
-    student_id = student['student_id']
-    today = date.today()
-    now = datetime.now()
-
-    cur.execute("""
-        SELECT *
-        FROM attendance
-        WHERE student_id = %s
-        AND date = %s
-    """, (student_id, today))
-
-    attendance = cur.fetchone()
-
-    if mode == 'clock_in':
-
-        if attendance and attendance['clock_in']:
-
-            cur.close()
-
-            return jsonify({
-                'success': False,
-                'message':
-                    f"{student['full_name']} has already clocked in today."
-            })
-
-        if attendance:
-
-            cur.execute("""
-                UPDATE attendance
-                SET
-                    clock_in = %s,
-                    clock_in_method = %s,
-                    clock_in_device = %s,
-                    status = %s,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE student_id = %s
-                AND date = %s
-            """, (
-                now,
-                'qr',
-                'SMARTPHONE',
-                'Present',
-                student_id,
-                today
-            ))
-
-        else:
-
-            cur.execute("""
-                INSERT INTO attendance (
-                    student_id,
-                    date,
-                    status,
-                    clock_in,
-                    clock_in_method,
-                    clock_in_device
-                )
-                VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s
-                )
-            """, (
-                student_id,
-                today,
-                'Present',
-                now,
-                'qr',
-                'SMARTPHONE'
-            ))
-
-        db.commit()
-        cur.close()
-
-        return jsonify({
-            'success': True,
-            'message':
-                f"✓ {student['full_name']} clocked in at "
-                f"{now.strftime('%H:%M:%S')}"
-        })
-
-
-    if mode == 'clock_out':
-
-        if not attendance or not attendance['clock_in']:
-
-            cur.close()
-
-            return jsonify({
-                'success': False,
-                'message':
-                    f"{student['full_name']} has not clocked in today."
-            })
-
-        if attendance['clock_out']:
-
-            cur.close()
-
-            return jsonify({
-                'success': False,
-                'message':
-                    f"{student['full_name']} has already clocked out today."
-            })
-
-        cur.execute("""
-            UPDATE attendance
-            SET
-                clock_out = %s,
-                clock_out_method = %s,
-                clock_out_device = %s,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE student_id = %s
-            AND date = %s
-        """, (
-            now,
-            'qr',
-            'SMARTPHONE',
-            student_id,
-            today
-        ))
-
-        db.commit()
-        cur.close()
-
-        return jsonify({
-            'success': True,
-            'message':
-                f"✓ {student['full_name']} clocked out at "
-                f"{now.strftime('%H:%M:%S')}"
-        })
-
-
-# ==================== INVENTORY DASHBOARD ====================
-
-
 @app.route('/inventory/dashboard')
 def inventory_dashboard():
 
@@ -18045,10 +16425,10 @@ def mobile_dashboard():
 
         cur.execute("""
             SELECT COUNT(*)
-            FROM students
+            FROM pupils
         """)
 
-        students = cur.fetchone()
+        pupils = cur.fetchone()
 
 
         cur.close()
@@ -18059,8 +16439,8 @@ def mobile_dashboard():
             'total_users':
                 users[0] if users else 0,
 
-            'total_students':
-                students[0] if students else 0
+            'total_pupils':
+                pupils[0] if pupils else 0
 
         })
 
