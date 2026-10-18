@@ -9,7 +9,10 @@ import secrets
 import random
 import string
 import sqlite3
+from dateutil.relativedelta import relativedelta
+import qrcode
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from functools import wraps
 from markupsafe import escape
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -153,9 +156,18 @@ def init_db():
     """)
     cursor.execute("""
         ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS face_descriptor TEXT;""")
+    cursor.execute("""
+        ALTER TABLE students
         ADD COLUMN IF NOT EXISTS programme TEXT
     """)
-    
+    cursor.execute("""
+        ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS signature_filename VARCHAR(255);
+    """)
+
+    cursor.execute("""ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS qr_token TEXT UNIQUE;""")
     cursor.execute("""
         ALTER TABLE students
         ADD COLUMN IF NOT EXISTS residence TEXT
@@ -284,6 +296,11 @@ def init_db():
             UNIQUE(student_id, subject, term, year)
         )
     """)
+    cursor.execute("""
+        ALTER TABLE marks
+        ADD COLUMN IF NOT EXISTS final_mark NUMERIC
+    """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fee_payment_requests (
             id SERIAL PRIMARY KEY,
@@ -472,7 +489,8 @@ def init_db():
             paye_threshold NUMERIC DEFAULT 235000
         )
     """)
-
+    cursor.execute("""ALTER TABLE school_settings
+        ADD COLUMN IF NOT EXISTS school_website TEXT;""")
 
     # PREDEFINED COMMENTS
     cursor.execute("""
@@ -671,7 +689,6 @@ def init_db():
         )
     """)
 
-
     # INVENTORY TRANSACTIONS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS inventory_transactions (
@@ -762,7 +779,33 @@ def init_db():
         )
     """)
 
-
+    # STUDENT CLEARANCE
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS student_clearance (
+            id SERIAL PRIMARY KEY,
+    
+            student_id TEXT NOT NULL,
+    
+            clearance_status TEXT DEFAULT 'pending',
+    
+            cleared_by INTEGER,
+    
+            cleared_at TIMESTAMP,
+    
+            remarks TEXT,
+    
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+            FOREIGN KEY(student_id)
+                REFERENCES students(student_id)
+                ON DELETE CASCADE,
+    
+            FOREIGN KEY(cleared_by)
+                REFERENCES users(id),
+    
+            UNIQUE(student_id)
+        )
+    """)
     # SPORTS ACTIVITIES
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sports_activities (
@@ -851,8 +894,40 @@ def init_db():
                 REFERENCES staff(id)
         )
     """)
-
-
+    cursor.execute("""ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS student_signature TEXT;""")
+    cursor.execute("""
+        ALTER TABLE school_settings
+        ADD COLUMN IF NOT EXISTS current_term VARCHAR(20) DEFAULT 'Term 1'
+    """)
+    
+    cursor.execute("""
+        ALTER TABLE school_settings
+        ADD COLUMN IF NOT EXISTS current_year INTEGER
+    """)
+    
+    cursor.execute("""
+        UPDATE school_settings
+        SET current_year = EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER
+        WHERE id = 1
+          AND current_year IS NULL
+    """)
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_in TIMESTAMP NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_out TIMESTAMP NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_in_method TEXT NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_out_method TEXT NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_in_device TEXT NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS clock_out_device TEXT NULL;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;""")
+    cursor.execute("""ALTER TABLE attendance
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;""")
     # AUTHORIZATION LOGS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS authorization_logs (
@@ -894,7 +969,6 @@ def init_db():
             VALUES (%s,%s)
             """,
             [
-                ('admin',1),
                 ('headteacher',1),
                 ('management',1),
                 ('bursar',1),
@@ -1087,8 +1161,11 @@ def execute_db(query, args=()):
     cur.close()
 
     return True
+uganda_time = datetime.now(ZoneInfo("Africa/Kampala"))
 
-
+time_now = datetime.now(
+    ZoneInfo("Africa/Kampala")
+).strftime("%H:%M:%S")
 def get_db_dict():
     """Return PostgreSQL dictionary cursor connection"""
     return get_db()
@@ -1380,6 +1457,8 @@ def get_grade_and_descriptor(percentage):
 
     return None, None
 
+def generate_qr_token():
+    return str(uuid.uuid4())
 
 def get_identifier(total_score):
     db = get_db()
@@ -1408,22 +1487,22 @@ def get_identifier(total_score):
 # =========================================================
 def get_alevel_class_teacher_comment(total_points):
 
-    if total_points >= 15:
+    if total_points >= 14:
         return (
             "Excellent performance. Keep it up!"
         )
 
-    elif total_points >= 12:
+    elif total_points >= 10:
         return (
             "Very good performance. Maintain it!"
         )
 
-    elif total_points >= 9:
+    elif total_points >= 7:
         return (
             "Good performance. Continue working hard."
         )
 
-    elif total_points >= 6:
+    elif total_points >= 4:
         return (
             "Fair performance. Put in more effort"
         )
@@ -1440,23 +1519,23 @@ def get_alevel_class_teacher_comment(total_points):
 # =========================================================
 def get_alevel_headteacher_comment(total_points):
 
-    if total_points >= 15:
+    if total_points >= 14:
         return (
             "Excellent academic performance. Keep up the excellent work."
         )
 
-    elif total_points >= 12:
+    elif total_points >= 10:
         return (
             "Very good academic performance. Continue working hard."
         )
 
-    elif total_points >= 9:
+    elif total_points >= 7:
         return (
             "Good academic performance. Maintain "
             "consistent effort."
         )
 
-    elif total_points >= 6:
+    elif total_points >= 4:
         return (
             "Fair academic performance. Increase effort"
         )
@@ -1631,13 +1710,16 @@ def generate_fee_prn():
 
 def teacher_has_class_access(user_id, student_class, assignment_type=None):
     """
-    Checks whether a teacher has access to a particular student class/stream.
+    Checks whether a teacher has access to a particular
+    student class/stream.
 
-    Examples:
+    Rules:
 
         Assignment S.1  -> S.1A, S.1B, S.1C
         Assignment S.2  -> S.2A, S.2B, S.2C
-        Assignment S.1A -> S.1A only
+
+        Assignment S.1B -> S.1B only
+        Assignment S.1C -> S.1C only
     """
 
     if not user_id or not student_class:
@@ -1649,25 +1731,30 @@ def teacher_has_class_access(user_id, student_class, assignment_type=None):
 
     for assignment in assignments:
 
-        if assignment_type and assignment['assignment_type'] != assignment_type:
+        if (
+            assignment_type
+            and assignment.get('assignment_type') != assignment_type
+        ):
             continue
 
-        assigned_class = (assignment.get('class_name') or '').strip().upper()
+        assigned_class = (
+            assignment.get('class_name') or ''
+        ).strip().upper()
 
         if not assigned_class:
             continue
 
-        # Exact match
+        # Exact stream/class match
         if student_class == assigned_class:
             return True
 
-        # Main class assignment covers its streams.
-        # Example:
+        # Main class assignment covers all its streams
+        #
         # S.1 -> S.1A
         # S.1 -> S.1B
         # S.2 -> S.2A
         #
-        # But S.1 must NOT match S.10A.
+        # S.1B does NOT cover S.1A.
         if re.match(
             r'^' + re.escape(assigned_class) + r'[A-Z]+$',
             student_class
@@ -1675,8 +1762,6 @@ def teacher_has_class_access(user_id, student_class, assignment_type=None):
             return True
 
     return False
-
-
 def get_teacher_accessible_classes(user_id=None, assignment_type=None):
     """
     Returns the classes assigned to the teacher.
@@ -2528,6 +2613,10 @@ def school_settings():
                 'school_email',
                 'Email: info@school.com'
             )
+            school_website = request.form.get(
+                'school_website',
+                ''
+            ).strip()
             # ================= LOGO UPLOAD =================
             logo_filename = None
             logo_file = request.files.get('logo')
@@ -2602,7 +2691,7 @@ def school_settings():
                     school_name=%s,
                     school_address=%s,
                     school_phone=%s,
-                    school_email=%s,
+                    school_email=%s,school_website=%s,
                     nssf_employee_rate=%s,
                     paye_rate=%s,
                     paye_threshold=%s
@@ -2614,7 +2703,7 @@ def school_settings():
                     school_name,
                     school_address,
                     school_phone,
-                    school_email,
+                    school_email, school_website,
                     nssf_employee_rate,
                     paye_rate,
                     paye_threshold
@@ -2666,7 +2755,7 @@ def school_settings():
             school_name,
             school_address,
             school_phone,
-            school_email,
+            school_email, school_website,
             logo_url,
             nssf_employee_rate,
             paye_rate,
@@ -2954,12 +3043,103 @@ def admission_submitted():
         data=admission_data
     )
 # ==================== DOS MODULE ====================
-SCHOOL_ABBR = "KSS"
+SCHOOL_ABBR = "ASS"
 def generate_student_id():
     return generate_unique_number(SCHOOL_ABBR, 'students', 'student_id', year_format=True)
 
 # ==================== DOS ADMISSION MANAGEMENT ====================
+@app.route('/school/report_settings', methods=['GET', 'POST'])
+def school_report_settings():
 
+    if not check_permission(['dos', 'headteacher']):
+        abort(403)
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    if request.method == 'POST':
+
+        term = request.form.get('term', 'Term 1').strip()
+
+        year = request.form.get(
+            'year',
+            datetime.now().year,
+            type=int
+        )
+
+        # Only allow the three official terms
+        if term not in ['Term 1', 'Term 2', 'Term 3']:
+            flash('Invalid term selected.', 'danger')
+            cur.close()
+            return redirect(
+                url_for('school_report_settings')
+            )
+
+        if year < 2000 or year > 2100:
+            flash('Invalid academic year.', 'danger')
+            cur.close()
+            return redirect(
+                url_for('school_report_settings')
+            )
+
+        cur.execute(
+            """
+            UPDATE school_settings
+            SET
+                current_term = %s,
+                current_year = %s
+            WHERE id = 1
+            """,
+            (
+                term,
+                year
+            )
+        )
+
+        db.commit()
+
+        flash(
+            f'Report settings saved: {term}, {year}.',
+            'success'
+        )
+
+        cur.close()
+
+        return redirect(
+            url_for('school_report_settings')
+        )
+
+    cur.execute(
+        """
+        SELECT
+            current_term,
+            current_year
+        FROM school_settings
+        WHERE id = 1
+        """
+    )
+
+    settings = cur.fetchone()
+
+    current_term = (
+        settings['current_term']
+        if settings and settings['current_term']
+        else 'Term 1'
+    )
+
+    current_year = (
+        settings['current_year']
+        if settings and settings['current_year']
+        else datetime.now().year
+    )
+
+    cur.close()
+
+    return render_template(
+        'school_report_settings.html',
+        current_term=current_term,
+        current_year=current_year
+    )
 @app.route('/dos/admit_student', methods=['GET', 'POST'])
 def dos_admit():
     if not check_permission(['dos']):
@@ -2996,27 +3176,51 @@ def dos_admit():
         if date_of_birth:
             birth_date = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
             age = calculate_age(birth_date)
-
         student_id = generate_student_id()
+        qr_token = generate_qr_token()
 
         photo_filename = "default_avatar.png"
-
         if photo and photo.filename and allowed_file(photo.filename, ALLOWED_IMAGE_EXTENSIONS):
             ext = photo.filename.rsplit('.', 1)[1].lower()
             photo_filename = f"{student_id}.{ext}"
             photo.save(
                 os.path.join(app.config['UPLOAD_FOLDER'], photo_filename)
             )
-
+        
+        # ================= SAVE STUDENT SIGNATURE (OPTIONAL) =================
+        student_signature_file = request.files.get('student_signature')
+        
+        signature_filename = None
+        
+        if (
+            student_signature_file
+            and student_signature_file.filename
+            and allowed_file(
+                student_signature_file.filename,
+                ALLOWED_IMAGE_EXTENSIONS
+            )
+        ):
+            signature_ext = (
+                student_signature_file.filename.rsplit('.', 1)[1].lower()
+            )
+        
+            signature_filename = f"student_signature_{student_id}.{signature_ext}"
+        
+            student_signature_file.save(
+                os.path.join(
+                    app.config['UPLOAD_FOLDER'],
+                    signature_filename
+                )
+            )
         try:
             execute_db(
                 """
                 INSERT INTO students
                 (
-                    student_id,
+                    student_id, qr_token,
                     full_name,
                     class,
-                    photo_path,
+                    photo_path,signature_filename,
                     fees_paid,
                     fees_balance,
                     admission_date,
@@ -3033,7 +3237,7 @@ def dos_admit():
                 )
                 VALUES
                 (
-                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,
                     0,0,
                     CURRENT_DATE,
                     %s,%s,%s,%s,%s,%s,%s,%s,
@@ -3042,10 +3246,10 @@ def dos_admit():
                 )
                 """,
                 (
-                    student_id,
+                    student_id, qr_token,
                     full_name,
                     class_name,
-                    photo_filename,
+                    photo_filename, signature_filename,
                     parent_phone,
                     date_of_birth,
                     age,
@@ -3519,6 +3723,45 @@ def dos_class_lists():
         term=term
     )
 
+@app.route('/dos/enroll_face/<student_id>')
+def dos_enroll_face(student_id):
+
+    if not check_permission(['dos']):
+        abort(403)
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    cur.execute(
+        """
+        SELECT
+            student_id,
+            full_name,
+            class,
+            photo_path,
+            face_descriptor
+        FROM students
+        WHERE student_id = %s
+        """,
+        (student_id,)
+    )
+
+    student = cur.fetchone()
+
+    cur.close()
+
+    if not student:
+        flash('Student not found.', 'danger')
+        return redirect(url_for('dos_class_lists'))
+
+    student['photo_url'] = get_photo_url(
+        student.get('photo_path')
+    )
+
+    return render_template(
+        'dos/enroll_face.html',
+        student=student
+    )
 # ==================== DOS TEACHER ASSIGNMENTS ====================
 
 @app.route('/dos/teacher_assignments', methods=['GET', 'POST'])
@@ -4379,8 +4622,11 @@ def dos_alevel_grading():
 
     if not check_permission(['dos']):
         abort(403)
+
     if request.method == 'POST':
+
         file = request.files.get('grading_file')
+
         if not file or not file.filename:
             flash(
                 'Please upload an Excel file.',
@@ -4389,20 +4635,27 @@ def dos_alevel_grading():
             return redirect(
                 url_for('dos_alevel_grading')
             )
+
         try:
             from openpyxl import load_workbook
+
             wb = load_workbook(
                 file,
                 data_only=True
             )
+
             sheet = wb.active
+
             headers = [
                 str(cell.value).strip().lower()
                 if cell.value else ''
                 for cell in sheet[1]
             ]
+
             cols = {}
+
             for idx, header in enumerate(headers):
+
                 if header in [
                     'min_score',
                     'max_score',
@@ -4410,16 +4663,19 @@ def dos_alevel_grading():
                     'points'
                 ]:
                     cols[header] = idx
+
             required = [
                 'min_score',
                 'max_score',
                 'grade',
                 'points'
             ]
+
             if not all(
                 item in cols
                 for item in required
             ):
+
                 flash(
                     'Missing required columns: min_score, max_score, grade, points',
                     'danger'
@@ -4428,13 +4684,18 @@ def dos_alevel_grading():
                 return redirect(
                     url_for('dos_alevel_grading')
                 )
+
+            # Remove existing MAIN A-Level grading rules.
+            # is_subsidiary = 0 means normal/main grading.
             execute_db(
                 """
                 DELETE FROM alevel_grading
-                WHERE is_subsidiary=FALSE
+                WHERE is_subsidiary = 0
                 """
             )
+
             count = 0
+
             for row_idx in range(
                 2,
                 sheet.max_row + 1
@@ -4459,6 +4720,7 @@ def dos_alevel_grading():
                     row=row_idx,
                     column=cols['points'] + 1
                 ).value
+
                 if None in [
                     min_val,
                     max_val,
@@ -4466,7 +4728,9 @@ def dos_alevel_grading():
                     points_val
                 ]:
                     continue
+
                 try:
+
                     execute_db(
                         """
                         INSERT INTO alevel_grading
@@ -4478,7 +4742,7 @@ def dos_alevel_grading():
                             is_subsidiary
                         )
                         VALUES
-                        (%s,%s,%s,%s,FALSE)
+                        (%s, %s, %s, %s, 0)
                         """,
                         (
                             float(min_val),
@@ -4489,13 +4753,15 @@ def dos_alevel_grading():
                     )
 
                     count += 1
-                except Exception:
 
+                except Exception:
                     continue
+
             flash(
                 f'{count} A-Level grading rules uploaded.',
                 'success'
             )
+
         except Exception as e:
 
             flash(
@@ -4503,10 +4769,14 @@ def dos_alevel_grading():
                 'danger'
             )
 
-
         return redirect(
             url_for('dos_alevel_grading')
         )
+
+    # --------------------------------------------------
+    # DISPLAY MAIN A-LEVEL GRADING RULES
+    # --------------------------------------------------
+
     db = get_db_dict()
     cur = db.cursor()
 
@@ -4518,18 +4788,19 @@ def dos_alevel_grading():
             grade,
             points
         FROM alevel_grading
-        WHERE is_subsidiary=FALSE
+        WHERE is_subsidiary = 0
         ORDER BY min_score DESC
         """
     )
+
     rules = cur.fetchall()
 
     cur.close()
+
     return render_template(
         'dos/alevel_grading.html',
         rules=rules
     )
-    
 
 @app.route('/dos/predefined_comments')
 def dos_predefined_comments():
@@ -5090,17 +5361,54 @@ def teacher_students():
         return redirect(url_for('dashboard'))
 
     # =========================================================
-    # GET ASSIGNED CLASSES
+    # GET ASSIGNED CLASSES AND THEIR STREAMS
     # =========================================================
-    available_classes = sorted(
-        list(
-            set(
-                (a['class_name'] or '').strip().upper()
-                for a in assignments
-                if a.get('class_name')
-            )
+    
+    db = get_db_dict()
+    cur = db.cursor()
+    
+    assigned_classes = sorted(
+        set(
+            (a['class_name'] or '').strip().upper()
+            for a in assignments
+            if a.get('class_name')
         )
     )
+    
+    available_classes = set()
+    
+    for assigned_class in assigned_classes:
+    
+        # Always include the main class
+        available_classes.add(assigned_class)
+    
+        # If assignment is a main class such as S.1,
+        # automatically include all its streams.
+        if re.match(r'^S\.\d+$', assigned_class):
+    
+            cur.execute(
+                """
+                SELECT DISTINCT class
+                FROM students
+                WHERE class ~ %s
+                ORDER BY class
+                """,
+                (
+                    '^' + re.escape(assigned_class) + r'[A-Za-z]+$',
+                )
+            )
+    
+            stream_rows = cur.fetchall()
+    
+            for row in stream_rows:
+                stream_class = (row['class'] or '').strip().upper()
+    
+                if stream_class:
+                    available_classes.add(stream_class)
+    
+    cur.close()
+    
+    available_classes = sorted(available_classes)
 
     if not available_classes:
         flash(
@@ -5255,66 +5563,1197 @@ def teacher_students():
     
 @app.route('/teacher/attendance', methods=['GET', 'POST'])
 def teacher_attendance():
+
     if not check_permission(['classteacher']):
         abort(403)
+
+    user_id = session.get('user_id')
 
     selected_class = session.get('selected_class')
 
     if not selected_class:
-        flash('No class selected', 'danger')
+        flash('No class selected.', 'danger')
         return redirect(url_for('teacher_students'))
+
+    selected_class = selected_class.strip().upper()
+
+    # ---------------------------------------------------------
+    # VERIFY TEACHER ACCESS TO THIS CLASS
+    # ---------------------------------------------------------
+
+    if not teacher_has_class_access(
+        user_id,
+        selected_class,
+        assignment_type='classteacher'
+    ):
+        abort(403)
+
+    # ---------------------------------------------------------
+    # SELECT DATE
+    # ---------------------------------------------------------
 
     selected_date = request.args.get(
         'date',
         datetime.now().strftime('%Y-%m-%d')
     )
 
+    # ---------------------------------------------------------
+    # SEARCH STUDENT
+    # ---------------------------------------------------------
+
+    search_query = request.args.get(
+        'search',
+        ''
+    ).strip()
+
+    # ---------------------------------------------------------
+    # MANUAL ATTENDANCE UPDATE
+    # ---------------------------------------------------------
+
     if request.method == 'POST':
-        selected_date = request.form['date']
+
+        selected_date = request.form.get('date')
+
+        if not selected_date:
+            flash('Attendance date is required.', 'danger')
+            return redirect(url_for('teacher_attendance'))
+
+        db = get_db_dict()
+        cur = db.cursor()
 
         for key, value in request.form.items():
-            if key.startswith('status_'):
-                student_id = key.split('_')[1]
 
-                execute_db(
-                    """
-                    INSERT INTO attendance
-                    (student_id, date, status)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT(student_id, date)
-                    DO UPDATE SET status=%s
-                    """,
-                    (student_id, selected_date, value, value)
+            if not key.startswith('status_'):
+                continue
+
+            student_id = key.replace('status_', '', 1)
+
+            # -------------------------------------------------
+            # Verify student belongs to teacher's class
+            # -------------------------------------------------
+
+            cur.execute(
+                """
+                SELECT student_id, class
+                FROM students
+                WHERE student_id = %s
+                """,
+                (student_id,)
+            )
+
+            student = cur.fetchone()
+
+            if not student:
+                continue
+
+            if not teacher_has_class_access(
+                user_id,
+                student['class'],
+                assignment_type='classteacher'
+            ):
+                continue
+
+            # -------------------------------------------------
+            # Update only manual attendance status.
+            #
+            # QR clock_in / clock_out are NOT changed.
+            # -------------------------------------------------
+
+            cur.execute(
+                """
+                INSERT INTO attendance
+                (
+                    student_id,
+                    date,
+                    status
                 )
+                VALUES (%s, %s, %s)
 
-        flash('Attendance saved.', 'success')
+                ON CONFLICT (student_id, date)
+                DO UPDATE SET
+                    status = EXCLUDED.status,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    student_id,
+                    selected_date,
+                    value
+                )
+            )
+
+        db.commit()
+        cur.close()
+
+        flash('Attendance saved successfully.', 'success')
+
+        return redirect(
+            url_for(
+                'teacher_attendance',
+                date=selected_date,
+                search=search_query
+            )
+        )
+
+    # ---------------------------------------------------------
+    # GET STUDENTS + ATTENDANCE
+    # ---------------------------------------------------------
 
     db = get_db_dict()
     cur = db.cursor()
 
-    cur.execute(
-        """
-        SELECT s.student_id, s.full_name, a.status
-        FROM students s
-        LEFT JOIN attendance a
-        ON s.student_id = a.student_id
-        AND a.date = %s
-        WHERE s.class = %s
-        ORDER BY s.full_name
-        """,
-        (selected_date, selected_class)
-    )
+    # ---------------------------------------------------------
+    # Main class e.g. S.1
+    # Include streams S.1A, S.1B, S.1C, etc.
+    # ---------------------------------------------------------
+
+    if re.match(r'^S\.\d+$', selected_class):
+
+        cur.execute(
+            """
+            SELECT
+                s.student_id,
+                s.full_name,
+                s.class,
+                a.status,
+                a.clock_in,
+                a.clock_out,
+                a.clock_in_method,
+                a.clock_out_method
+            FROM students s
+
+            LEFT JOIN attendance a
+                ON s.student_id = a.student_id
+                AND a.date = %s
+
+            WHERE
+                s.class = %s
+                OR s.class ~ %s
+
+            ORDER BY
+                s.class,
+                s.full_name
+            """,
+            (
+                selected_date,
+                selected_class,
+                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
+            )
+        )
+
+    # ---------------------------------------------------------
+    # Specific stream e.g. S.1A
+    # ---------------------------------------------------------
+
+    else:
+
+        cur.execute(
+            """
+            SELECT
+                s.student_id,
+                s.full_name,
+                s.class,
+                a.status,
+                a.clock_in,
+                a.clock_out,
+                a.clock_in_method,
+                a.clock_out_method
+            FROM students s
+
+            LEFT JOIN attendance a
+                ON s.student_id = a.student_id
+                AND a.date = %s
+
+            WHERE s.class = %s
+
+            ORDER BY s.full_name
+            """,
+            (
+                selected_date,
+                selected_class
+            )
+        )
 
     records = cur.fetchall()
     cur.close()
 
-    return render_template(
-        'teacher/attendance.html',
-        records=records,
-        selected_date=selected_date,
-        assigned_class=selected_class
+    # ---------------------------------------------------------
+    # SUMMARY
+    #
+    # IMPORTANT:
+    # Summary is calculated from the FULL class records,
+    # before applying the search filter.
+    # ---------------------------------------------------------
+
+    total = len(records)
+
+    present = sum(
+        1
+        for r in records
+        if r['clock_in'] and not r['clock_out']
     )
 
+    left_school = sum(
+        1
+        for r in records
+        if r['clock_out']
+    )
+
+    absent = sum(
+        1
+        for r in records
+        if not r['clock_in']
+        and r['status'] != 'Present'
+        and r['status'] != 'Late'
+    )
+
+    late = sum(
+        1
+        for r in records
+        if r['status'] == 'Late'
+    )
+
+    summary = {
+        'total': total,
+        'present': present,
+        'absent': absent,
+        'left': left_school,
+        'late': late
+    }
+
+    # ---------------------------------------------------------
+    # FILTER DISPLAY RECORDS
+    #
+    # Search works with:
+    # - Student ID
+    # - Full name
+    # - Partial name
+    # ---------------------------------------------------------
+
+    if search_query:
+
+        search_lower = search_query.lower()
+
+        display_records = [
+            r
+            for r in records
+            if search_lower in (
+                r['student_id'] or ''
+            ).lower()
+            or search_lower in (
+                r['full_name'] or ''
+            ).lower()
+        ]
+
+    else:
+
+        display_records = records
+
+    # ---------------------------------------------------------
+    # RENDER PAGE
+    # ---------------------------------------------------------
+
+    return render_template(
+        'teacher/attendance.html',
+        records=display_records,
+        selected_date=selected_date,
+        assigned_class=selected_class,
+        summary=summary,
+        search_query=search_query
+    )
+
+@app.route('/teacher/attendance-reports')
+def teacher_attendance_reports():
+
+    if not check_permission(['classteacher','headteacher','dos']):
+        abort(403)
+    user_id = session.get('user_id')
+    user_role = session.get('role')
+    selected_class = session.get('selected_class')
+    if user_role in['headteacher','dos']:
+        
+        selected_class = request.args.get(
+            'class',
+            'ALL'
+        ).strip().upper()
+    else:
+        if not selected_class:
+            flash('No class selected.', 'danger')
+            return redirect(url_for('teacher_students'))
+    
+        selected_class = selected_class.strip().upper()
+    
+        if not teacher_has_class_access(
+            user_id,
+            selected_class,
+            assignment_type='classteacher'
+        ):
+            abort(403)
+    # DATE RANGE
+    today = date.today()
+    default_from = today.replace(day=1)
+    date_from = request.args.get(
+        'date_from',
+        default_from.strftime('%Y-%m-%d')
+    )
+
+    date_to = request.args.get(
+        'date_to',
+        today.strftime('%Y-%m-%d')
+    )
+    # ---------------------------------------------------------
+    # CLOCK-IN SUMMARY DATE RANGE
+    # This is independent from the main attendance report.
+    # ---------------------------------------------------------
+    
+    clockin_date_from = request.args.get(
+        'clockin_date_from',
+        date_from
+    )
+    
+    clockin_date_to = request.args.get(
+        'clockin_date_to',
+        date_to
+    )
+    
+    try:
+    
+        clockin_date_from_obj = datetime.strptime(
+            clockin_date_from,
+            '%Y-%m-%d'
+        ).date()
+    
+        clockin_date_to_obj = datetime.strptime(
+            clockin_date_to,
+            '%Y-%m-%d'
+        ).date()
+    
+    except ValueError:
+    
+        flash(
+            'Invalid clock-in summary date range.',
+            'danger'
+        )
+    
+        return redirect(
+            url_for('teacher_attendance_reports')
+        )
+    
+    if clockin_date_from_obj > clockin_date_to_obj:
+    
+        flash(
+            'Clock-in summary starting date cannot be after the ending date.',
+            'danger'
+        )
+    
+        return redirect(
+            url_for('teacher_attendance_reports')
+        )
+    # ---------------------------------------------------------
+    # VALIDATE DATES
+    # ---------------------------------------------------------
+
+    try:
+
+        date_from_obj = datetime.strptime(
+            date_from,
+            '%Y-%m-%d'
+        ).date()
+
+        date_to_obj = datetime.strptime(
+            date_to,
+            '%Y-%m-%d'
+        ).date()
+
+    except ValueError:
+
+        flash(
+            'Invalid report date range.',
+            'danger'
+        )
+
+        return redirect(
+            url_for('teacher_attendance_reports')
+        )
+
+    if date_from_obj > date_to_obj:
+
+        flash(
+            'The starting date cannot be after the ending date.',
+            'danger'
+        )
+
+        return redirect(
+            url_for('teacher_attendance_reports')
+        )
+
+    # ---------------------------------------------------------
+    # STUDENT SEARCH
+    # ---------------------------------------------------------
+
+    student_search = request.args.get(
+        'student_search',
+        ''
+    ).strip()
+
+    selected_student_id = request.args.get(
+        'student_id',
+        ''
+    ).strip()
+
+    db = get_db_dict()
+    cur = db.cursor()
+    class_options = []
+    if user_role in ['headteacher','dos']:
+        cur.execute(
+            """
+            SELECT DISTINCT class
+            FROM students
+            WHERE class IS NOT NULL
+              AND TRIM(class) <> ''
+            ORDER BY class
+            """
+        )
+        class_rows = cur.fetchall()
+    
+        class_options = [
+            row['class'].strip().upper()
+            for row in class_rows
+        ]
+    # ---------------------------------------------------------
+    # GET STUDENTS IN TEACHER'S CLASS
+    # ---------------------------------------------------------
+
+    if selected_class == 'ALL':
+        cur.execute(
+            """
+            SELECT
+                student_id,
+                full_name,
+                class, sex
+            FROM students
+            ORDER BY
+                class,
+                full_name
+            """
+        )
+    
+    elif re.match(r'^S\.\d+$', selected_class):
+        cur.execute(
+            """
+            SELECT
+                student_id,
+                full_name,
+                class, sex
+            FROM students
+            WHERE
+                class = %s
+                OR class ~ %s
+            ORDER BY
+                class,
+                full_name
+            """,
+            (
+                selected_class,
+                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
+            )
+        )
+    
+    else:
+    
+        cur.execute(
+            """
+            SELECT
+                student_id,
+                full_name,
+                class, sex
+            FROM students
+            WHERE class = %s
+            ORDER BY full_name
+            """,
+            (selected_class,)
+        )
+
+    class_students = cur.fetchall()
+
+    # ---------------------------------------------------------
+    # STUDENT SEARCH RESULTS
+    # ---------------------------------------------------------
+
+    search_results = []
+
+    if student_search:
+
+        search_lower = student_search.lower()
+
+        search_results = [
+            student
+            for student in class_students
+            if search_lower in (
+                student['student_id'] or ''
+            ).lower()
+            or search_lower in (
+                student['full_name'] or ''
+            ).lower()
+        ]
+
+    # ---------------------------------------------------------
+    # SELECTED STUDENT
+    # ---------------------------------------------------------
+
+    selected_student = None
+    student_summary = None
+
+    if selected_student_id:
+
+        for student in class_students:
+
+            if student['student_id'] == selected_student_id:
+
+                selected_student = student
+                break
+
+        if selected_student:
+
+            # -------------------------------------------------
+            # STUDENT ATTENDANCE SUMMARY
+            # -------------------------------------------------
+
+            if selected_class == 'ALL':
+
+                cur.execute(
+                    """
+                    WITH school_days AS (
+                        SELECT DISTINCT
+                            a.date
+                        FROM attendance a
+                        WHERE
+                            a.date BETWEEN %s AND %s
+                    )
+                    SELECT
+                        COUNT(sd.date) AS school_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_in IS NOT NULL
+                                     OR a.status = 'Present'
+                                     OR a.status = 'Late'
+                                THEN 1
+                            END
+                        ) AS attended_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.status = 'Late'
+                                THEN 1
+                            END
+                        ) AS late_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.status = 'Absent'
+                                THEN 1
+                            END
+                        ) AS absent_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_in IS NOT NULL
+                                     AND a.clock_out IS NULL
+                                THEN 1
+                            END
+                        ) AS currently_in_school,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_out IS NOT NULL
+                                THEN 1
+                            END
+                        ) AS days_left_school
+            
+                    FROM school_days sd
+            
+                    LEFT JOIN attendance a
+                        ON a.student_id = %s
+                        AND a.date = sd.date
+                    """,
+                    (
+                        date_from_obj,
+                        date_to_obj,
+                        selected_student_id
+                    )
+                )
+            
+            else:
+            
+                cur.execute(
+                    """
+                    WITH school_days AS (
+                        SELECT DISTINCT
+                            a.date
+                        FROM attendance a
+                        INNER JOIN students s
+                            ON s.student_id = a.student_id
+                        WHERE
+                            a.date BETWEEN %s AND %s
+                            AND (
+                                s.class = %s
+                                OR s.class ~ %s
+                            )
+                    )
+                    SELECT
+                        COUNT(sd.date) AS school_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_in IS NOT NULL
+                                     OR a.status = 'Present'
+                                     OR a.status = 'Late'
+                                THEN 1
+                            END
+                        ) AS attended_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.status = 'Late'
+                                THEN 1
+                            END
+                        ) AS late_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.status = 'Absent'
+                                THEN 1
+                            END
+                        ) AS absent_days,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_in IS NOT NULL
+                                     AND a.clock_out IS NULL
+                                THEN 1
+                            END
+                        ) AS currently_in_school,
+            
+                        COUNT(
+                            CASE
+                                WHEN a.clock_out IS NOT NULL
+                                THEN 1
+                            END
+                        ) AS days_left_school
+            
+                    FROM school_days sd
+            
+                    LEFT JOIN attendance a
+                        ON a.student_id = %s
+                        AND a.date = sd.date
+                    """,
+                    (
+                        date_from_obj,
+                        date_to_obj,
+                        selected_class,
+                        '^' + re.escape(selected_class) + r'[A-Za-z]+$',
+                        selected_student_id
+                    )
+                )
+            
+            student_summary = cur.fetchone()
+            school_days = (
+                student_summary['school_days']
+                or 0
+            )
+
+            attended_days = (
+                student_summary['attended_days']
+                or 0
+            )
+
+            late_days = (
+                student_summary['late_days']
+                or 0
+            )
+
+            absent_days = (
+                student_summary['absent_days']
+                or 0
+            )
+
+            currently_in_school = (
+                student_summary['currently_in_school']
+                or 0
+            )
+
+            days_left_school = (
+                student_summary['days_left_school']
+                or 0
+            )
+
+            if school_days > 0:
+
+                attendance_rate = round(
+                    (
+                        attended_days
+                        / school_days
+                    ) * 100,
+                    1
+                )
+
+            else:
+
+                attendance_rate = 0
+
+            student_summary = {
+                'school_days': school_days,
+                'attended_days': attended_days,
+                'late_days': late_days,
+                'absent_days': absent_days,
+                'currently_in_school': currently_in_school,
+                'days_left_school': days_left_school,
+                'attendance_rate': attendance_rate
+            }
+
+    # ---------------------------------------------------------
+    # CLASS SUMMARY
+    # ---------------------------------------------------------
+
+    class_summary = []
+
+    # ---------------------------------------------------------
+    # Find dates where attendance was actually recorded
+    # for this class.
+    #
+    # This avoids counting weekends/holidays automatically
+    # as school days.
+    # ---------------------------------------------------------
+
+    if selected_class == 'ALL':
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT a.date) AS school_days
+            FROM attendance a
+            INNER JOIN students s
+                ON s.student_id = a.student_id
+            WHERE
+                a.date BETWEEN %s AND %s
+            """,
+            (
+                date_from_obj,
+                date_to_obj
+            )
+        )
+    
+    else:
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT a.date) AS school_days
+            FROM attendance a
+            INNER JOIN students s
+                ON s.student_id = a.student_id
+            WHERE
+                a.date BETWEEN %s AND %s
+                AND (
+                    s.class = %s
+                    OR s.class ~ %s
+                )
+            """,
+            (
+                date_from_obj,
+                date_to_obj,
+                selected_class,
+                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
+            )
+        )
+
+    # IMPORTANT:
+    # Fetch this BEFORE running another query.
+    school_days_row = cur.fetchone()
+
+    school_days = (
+        (school_days_row['school_days'] or 0)
+        if school_days_row
+        else 0
+    )
+    # ---------------------------------------------------------
+    # CLOCK-IN ATTENDANCE SUMMARY
+    #
+    # This summary:
+    # - Uses its own date range
+    # - Counts actual clock-ins only
+    # - Does NOT use attendance.status
+    # - Groups by class/stream
+    # - Does NOT group by date
+    # - Counts each student once in the selected period
+    # ---------------------------------------------------------
+    
+    clockin_summary = []
+    
+    
+    if selected_class == 'ALL':
+    
+        cur.execute(
+            """
+            SELECT
+                TRIM(s.class) AS class_name,
+    
+                COUNT(
+                    DISTINCT CASE
+                        WHEN LOWER(TRIM(s.sex)) IN
+                            ('male', 'm', 'boy', 'boys')
+                        THEN s.student_id
+                    END
+                ) AS boys,
+    
+                COUNT(
+                    DISTINCT CASE
+                        WHEN LOWER(TRIM(s.sex)) IN
+                            ('female', 'f', 'girl', 'girls')
+                        THEN s.student_id
+                    END
+                ) AS girls,
+    
+                COUNT(
+                    DISTINCT s.student_id
+                ) AS total
+    
+            FROM attendance a
+    
+            INNER JOIN students s
+                ON s.student_id = a.student_id
+    
+            WHERE
+                a.date BETWEEN %s AND %s
+                AND a.clock_in IS NOT NULL
+                AND s.admission_status = 'approved'
+    
+            GROUP BY
+                TRIM(s.class)
+    
+            ORDER BY
+                TRIM(s.class)
+            """,
+            (
+                clockin_date_from_obj,
+                clockin_date_to_obj
+            )
+        )
+    
+    else:
+    
+        cur.execute(
+            """
+            SELECT
+                TRIM(s.class) AS class_name,
+    
+                COUNT(
+                    DISTINCT CASE
+                        WHEN LOWER(TRIM(s.sex)) IN
+                            ('male', 'm', 'boy', 'boys')
+                        THEN s.student_id
+                    END
+                ) AS boys,
+    
+                COUNT(
+                    DISTINCT CASE
+                        WHEN LOWER(TRIM(s.sex)) IN
+                            ('female', 'f', 'girl', 'girls')
+                        THEN s.student_id
+                    END
+                ) AS girls,
+    
+                COUNT(
+                    DISTINCT s.student_id
+                ) AS total
+    
+            FROM attendance a
+    
+            INNER JOIN students s
+                ON s.student_id = a.student_id
+    
+            WHERE
+                a.date BETWEEN %s AND %s
+                AND a.clock_in IS NOT NULL
+                AND s.admission_status = 'approved'
+                AND (
+                    s.class = %s
+                    OR s.class ~ %s
+                )
+    
+            GROUP BY
+                TRIM(s.class)
+    
+            ORDER BY
+                TRIM(s.class)
+            """,
+            (
+                clockin_date_from_obj,
+                clockin_date_to_obj,
+                selected_class,
+                '^' + re.escape(selected_class) + r'[A-Za-z]+$'
+            )
+        )
+    
+    
+    clockin_rows = cur.fetchall()
+    
+    
+    for row in clockin_rows:
+    
+        boys = row['boys'] or 0
+        girls = row['girls'] or 0
+        total = row['total'] or 0
+    
+        clockin_summary.append({
+            'class_name': row['class_name'],
+            'boys': boys,
+            'girls': girls,
+            'total': total
+        })
+    
+    
+    # ---------------------------------------------------------
+    # CLOCK-IN GRAND TOTALS
+    # ---------------------------------------------------------
+    
+    clockin_totals = {
+        'boys': sum(
+            row['boys']
+            for row in clockin_summary
+        ),
+    
+        'girls': sum(
+            row['girls']
+            for row in clockin_summary
+        ),
+    
+        'total': sum(
+            row['total']
+            for row in clockin_summary
+        )
+    }
+    # ---------------------------------------------------------
+    # CLASS STUDENT SUMMARY
+    # ---------------------------------------------------------
+
+    for student in class_students:
+
+        cur.execute(
+            """
+            SELECT
+
+                COUNT(
+                    CASE
+                        WHEN
+                            a.clock_in IS NOT NULL
+                            OR a.status = 'Present'
+                            OR a.status = 'Late'
+                        THEN 1
+                    END
+                ) AS present_days,
+
+                COUNT(
+                    CASE
+                        WHEN a.status = 'Late'
+                        THEN 1
+                    END
+                ) AS late_days,
+
+                COUNT(
+                    CASE
+                        WHEN a.status = 'Absent'
+                        THEN 1
+                    END
+                ) AS absent_days
+
+            FROM attendance a
+
+            WHERE
+                a.student_id = %s
+                AND a.date BETWEEN %s AND %s
+            """,
+            (
+                student['student_id'],
+                date_from_obj,
+                date_to_obj
+            )
+        )
+
+        attendance = cur.fetchone()
+
+        present_days = (
+            attendance['present_days']
+            or 0
+        )
+
+        late_days = (
+            attendance['late_days']
+            or 0
+        )
+
+        absent_days = (
+            attendance['absent_days']
+            or 0
+        )
+
+        # -----------------------------------------------------
+        # Calculate attendance rate
+        #
+        # Present + Late count as attendance.
+        # -----------------------------------------------------
+
+        if school_days > 0:
+
+            attendance_rate = round(
+                (
+                    (present_days)
+                    / school_days
+                ) * 100,
+                1
+            )
+
+        else:
+
+            attendance_rate = 0
+
+        class_summary.append({
+            'student_id': student['student_id'],
+            'full_name': student['full_name'],
+            'class': student['class'],
+            'sex': student['sex'],
+            'present_days': present_days,
+            'late_days': late_days,
+            'absent_days': absent_days,
+            'attendance_rate': attendance_rate
+        })
+
+    # ---------------------------------------------------------
+    # CLASS TOTALS
+    # ---------------------------------------------------------
+
+    total_students = len(class_summary)
+
+    total_present = sum(
+        r['present_days']
+        for r in class_summary
+    )
+
+    total_late = sum(
+        r['late_days']
+        for r in class_summary
+    )
+
+    total_absent = sum(
+        r['absent_days']
+        for r in class_summary
+    )
+
+    if total_students > 0 and school_days > 0:
+
+        class_average = round(
+            sum(
+                r['attendance_rate']
+                for r in class_summary
+            ) / total_students,
+            1
+        )
+
+    else:
+
+        class_average = 0
+
+    class_totals = {
+        'students': total_students,
+        'school_days': school_days,
+        'present': total_present,
+        'late': total_late,
+        'absent': total_absent,
+        'average': class_average
+    }
+
+    cur.close()
+
+    return render_template(
+        'teacher/attendance_reports.html',
+        assigned_class=selected_class,
+        class_options=class_options,
+        user_role=user_role,
+        date_from=date_from,
+        date_to=date_to,
+        clockin_date_from=clockin_date_from,
+        clockin_date_to=clockin_date_to,
+        student_search=student_search,
+        search_results=search_results,
+        selected_student=selected_student,
+        student_summary=student_summary,
+        class_summary=class_summary,
+        class_totals=class_totals, clockin_summary=clockin_summary,
+        clockin_totals=clockin_totals
+    )
+
+@app.route('/dos/save_face_descriptor', methods=['POST'])
+def dos_save_face_descriptor():
+
+    if not check_permission(['dos']):
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+
+    student_id = (data.get('student_id') or '').strip()
+    descriptor = data.get('descriptor')
+
+    if not student_id:
+        return jsonify({
+            'success': False,
+            'message': 'Student ID is required.'
+        }), 400
+
+    if not isinstance(descriptor, list) or len(descriptor) != 128:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid face descriptor.'
+        }), 400
+
+    try:
+        descriptor_json = json.dumps(descriptor)
+
+        db = get_db_dict()
+        cur = db.cursor()
+
+        cur.execute(
+            """
+            UPDATE students
+            SET face_descriptor = %s
+            WHERE student_id = %s
+            """,
+            (descriptor_json, student_id)
+        )
+
+        if cur.rowcount == 0:
+            db.rollback()
+            cur.close()
+
+            return jsonify({
+                'success': False,
+                'message': 'Student not found.'
+            }), 404
+
+        db.commit()
+        cur.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Face enrolled successfully.'
+        })
+
+    except Exception as e:
+
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
 def to_number(value):
     if value is None:
         return 0
@@ -5330,144 +6769,887 @@ def to_number(value):
 
     return float(value)
 
-@app.route("/save_manual_marks", methods=["POST"])
-def save_manual_marks():
+@app.route('/teacher/upload_marks', methods=['GET', 'POST'])
+def teacher_upload_marks():
+
     if not check_permission(
         ['classteacher', 'subject_teacher', 'dos']
     ):
         abort(403)
+
+    teacher_id = session.get('user_id')
+
+    # =========================================================
+    # GET TEACHER ASSIGNMENTS
+    # =========================================================
+
+    assignments = get_user_assignments(teacher_id)
+
+    if not assignments:
+
+        flash(
+            'No classes assigned.',
+            'danger'
+        )
+
+        return redirect(
+            url_for('dashboard')
+        )
+
+    # =========================================================
+    # BUILD CLASSES AVAILABLE FOR MARK ENTRY
+    # =========================================================
+
+    assigned_classes = set()
+
+    for assignment in assignments:
+
+        assigned_class = (
+            assignment.get('class_name') or ''
+        ).strip().upper()
+
+        if not assigned_class:
+            continue
+
+        assigned_classes.add(
+            assigned_class
+        )
+
+    # =========================================================
+    # EXPAND STREAM ASSIGNMENTS
+    #
+    # Example:
+    # S.5A -> S.5A, S.5B, S.5C...
+    # S.1B -> S.1A, S.1B, S.1C...
+    # =========================================================
+
+    upload_classes = set(
+        assigned_classes
+    )
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    for assigned_class in assigned_classes:
+
+        match = re.match(
+            r'^(S\.\d+)([A-Z]+)?$',
+            assigned_class
+        )
+
+        if not match:
+            continue
+
+        parent_class = match.group(1)
+
+        cur.execute(
+            """
+            SELECT DISTINCT class
+            FROM students
+            WHERE class ~ %s
+            ORDER BY class
+            """,
+            (
+                '^' +
+                re.escape(parent_class) +
+                r'[A-Za-z]+$',
+            )
+        )
+
+        stream_rows = cur.fetchall()
+
+        for row in stream_rows:
+
+            stream_class = (
+                row['class'] or ''
+            ).strip().upper()
+
+            if stream_class:
+
+                upload_classes.add(
+                    stream_class
+                )
+
+    # =========================================================
+    # FINAL AVAILABLE CLASSES
+    # =========================================================
+
+    available_classes = sorted(
+        upload_classes
+    )
+
+    if not available_classes:
+
+        cur.close()
+        db.close()
+
+        flash(
+            'No classes assigned.',
+            'danger'
+        )
+
+        return redirect(
+            url_for('dashboard')
+        )
+
+    # =========================================================
+    # SELECT CLASS
+    # =========================================================
+
+    selected_class = request.args.get(
+        'class_name',
+        session.get(
+            'selected_class',
+            available_classes[0]
+        )
+    )
+
+    selected_class = (
+        selected_class.strip().upper()
+        if selected_class
+        else available_classes[0]
+    )
+
+    # Make sure class is allowed
+    if selected_class not in available_classes:
+
+        selected_class = (
+            available_classes[0]
+        )
+
+    # Remember selected class
+    session['selected_class'] = (
+        selected_class
+    )
+
+    # =========================================================
+    # SELECT TERM
+    #
+    # The teacher can choose Term 1, Term 2 or Term 3.
+    # The selected term is remembered.
+    # =========================================================
+
+    allowed_terms = [
+        'Term 1',
+        'Term 2',
+        'Term 3'
+    ]
+
+    selected_term = request.args.get(
+        'term',
+        session.get(
+            'selected_term',
+            'Term 1'
+        )
+    )
+
+    if selected_term not in allowed_terms:
+
+        selected_term = 'Term 1'
+
+    # Remember selected term
+    session['selected_term'] = (
+        selected_term
+    )
+
+    # =========================================================
+    # SELECT YEAR
+    #
+    # Year is editable.
+    #
+    # Once changed, it remains selected until the teacher
+    # changes it again.
+    # =========================================================
+
+    current_year = datetime.now().year
+
+    selected_year = request.args.get(
+        'year',
+        session.get(
+            'selected_year',
+            current_year
+        )
+    )
+
+    try:
+
+        selected_year = int(
+            selected_year
+        )
+
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        selected_year = current_year
+
+    # Keep year within reasonable range
+    if (
+        selected_year < 2000
+        or selected_year > 2100
+    ):
+
+        selected_year = current_year
+
+    # Remember selected year
+    session['selected_year'] = (
+        selected_year
+    )
     
+    
+    # =========================================================
+    # GET SAVED MARKS
+    # =========================================================
+
+    subject = request.args.get(
+        'subject',
+        session.get('selected_subject', '')
+    ).strip()
+    
+    if subject:
+        session['selected_subject'] = subject
+
+    saved_marks = {}
+    
+    if subject:
+        cur.execute(
+            """
+            SELECT m.*
+            FROM marks AS m
+            JOIN students AS s
+              ON s.student_id = m.student_id
+            WHERE m.subject = %s
+              AND m.term = %s
+              AND m.year = %s
+              AND s.class = %s
+            """,
+            (
+                subject,
+                selected_term,
+                selected_year,
+                selected_class
+            )
+        )
+    
+        saved_marks = {
+            str(row['student_id']): row
+            for row in cur.fetchall()
+        }
+
+    # =========================================================
+    # DETERMINE LEVEL
+    # =========================================================
+
+    class_upper = (
+        selected_class or ''
+    ).strip().upper()
+
+    normalized_class = (
+        class_upper.replace(' ', '')
+    )
+
+    # A-Level
+    if (
+        normalized_class in [
+            'S5',
+            'S6',
+            'A-LEVEL',
+            'ALEVEL'
+        ]
+
+        or re.match(
+            r'^S\.?[56][A-Z]*$',
+            normalized_class
+        )
+    ):
+
+        level = 'alevel'
+
+    else:
+
+        level = 'olevel'
+
+    # =========================================================
+    # GET STUDENTS
+    # =========================================================
+
+    cur.execute(
+        """
+        SELECT
+            student_id,
+            full_name
+        FROM students
+        WHERE class = %s
+        ORDER BY full_name
+        """,
+        (selected_class,)
+    )
+
+    students = cur.fetchall()
+
+    # =========================================================
+    # EXCEL UPLOAD
+    # =========================================================
+
+    if request.method == 'POST':
+
+        subject = request.form.get(
+            'subject',
+            ''
+        ).strip()
+
+        term = request.form.get(
+            'term',
+            selected_term
+        ).strip()
+
+        year = request.form.get(
+            'year',
+            selected_year
+        )
+
+        teacher_initials = request.form.get(
+            'teacher_initials',
+            ''
+        ).strip()
+
+        is_subsidiary = (
+            request.form.get(
+                'is_subsidiary'
+            ) == 'on'
+        )
+
+        # -----------------------------------------------------
+        # VALIDATE TERM
+        # -----------------------------------------------------
+
+        if term not in allowed_terms:
+
+            cur.close()
+            db.close()
+
+            flash(
+                'Invalid term. Please select Term 1, Term 2 or Term 3.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'teacher_upload_marks',
+                    class_name=selected_class,
+                    term=selected_term,
+                    year=selected_year
+                )
+            )
+
+        # -----------------------------------------------------
+        # VALIDATE YEAR
+        # -----------------------------------------------------
+
+        try:
+
+            year = int(year)
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
+            year = selected_year
+
+        if year < 2000 or year > 2100:
+
+            cur.close()
+            db.close()
+
+            flash(
+                'Please enter a valid year.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'teacher_upload_marks',
+                    class_name=selected_class,
+                    term=term,
+                    year=selected_year
+                )
+            )
+
+        # -----------------------------------------------------
+        # VALIDATE SUBJECT
+        # -----------------------------------------------------
+
+        if not subject:
+
+            cur.close()
+            db.close()
+
+            flash(
+                'Please enter the subject.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'teacher_upload_marks',
+                    class_name=selected_class,
+                    term=term,
+                    year=year
+                )
+            )
+
+        # -----------------------------------------------------
+        # VALIDATE TEACHER INITIALS
+        # -----------------------------------------------------
+
+        if not teacher_initials:
+
+            cur.close()
+            db.close()
+
+            flash(
+                'Please enter teacher initials.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'teacher_upload_marks',
+                    class_name=selected_class,
+                    term=term,
+                    year=year
+                )
+            )
+
+        # -----------------------------------------------------
+        # REMEMBER TERM AND YEAR
+        # -----------------------------------------------------
+
+        session['selected_term'] = term
+        session['selected_year'] = year
+
+        # -----------------------------------------------------
+        # GET FILE
+        # -----------------------------------------------------
+
+        file = request.files.get(
+            'marks_file'
+        )
+
+        if not file or not file.filename:
+
+            cur.close()
+            db.close()
+
+            flash(
+                'Please upload an Excel file.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'teacher_upload_marks',
+                    class_name=selected_class,
+                    term=term,
+                    year=year
+                )
+            )
+
+        # -----------------------------------------------------
+        # PROCESS EXCEL FILE
+        #
+        # IMPORTANT:
+        # process_marks_upload should use the supplied
+        # teacher_initials when saving the uploaded marks.
+        # -----------------------------------------------------
+
+        count = process_marks_upload(
+            file,
+            subject,
+            term,
+            year,
+            selected_class,
+            teacher_id,
+            level,
+            is_subsidiary,
+            teacher_initials
+        )
+
+        flash(
+            f'{count} marks uploaded successfully.',
+            'success'
+        )
+
+        cur.close()
+        db.close()
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=selected_class,
+                term=term,
+                year=year
+            )
+        )
+
+    # =========================================================
+    # CLOSE DATABASE
+    # =========================================================
+
+    cur.close()
+    db.close()
+
+    # =========================================================
+    # RENDER CORRECT TEMPLATE
+    # =========================================================
+
+    return render_template(
+        f'teacher/upload_marks_{level}.html',
+
+        assigned_class=selected_class,
+
+        current_year=selected_year,
+
+        selected_year=selected_year,
+
+        selected_term=selected_term,
+
+        teacher_classes=[
+            {
+                'class_name': c
+            }
+            for c in available_classes
+        ],
+
+        selected_class=selected_class,  subject=subject,
+        saved_marks=saved_marks, 
+        students=students
+    )
+
+@app.route("/save_manual_marks", methods=["POST"])
+def save_manual_marks():
+
+    if not check_permission(
+        ['classteacher', 'subject_teacher', 'dos']
+    ):
+        abort(403)
+
     db = get_db_dict()
     cursor = db.cursor()
-    
-    subject = request.form.get('subject')
-    term = request.form.get('term')
-    year = request.form.get('year')
-    
+
     # =========================================================
-    # ALLOWED TERMS
+    # GET COMMON DETAILS
     # =========================================================
-    allowed_terms = ['Term 1', 'Term 2', 'Term 3']
-    
+
+    subject = request.form.get(
+        'subject',
+        ''
+    ).strip()
+
+    term = request.form.get(
+        'term',
+        ''
+    ).strip()
+
+    year = request.form.get(
+        'year',
+        ''
+    )
+
+    teacher_initials = request.form.get(
+        'teacher_initials',
+        ''
+    ).strip()
+
+    # =========================================================
+    # VALIDATE TERM
+    # =========================================================
+
+    allowed_terms = [
+        'Term 1',
+        'Term 2',
+        'Term 3'
+    ]
+
     if term not in allowed_terms:
+
         cursor.close()
         db.close()
-    
+
         flash(
             'Invalid term. Please select Term 1, Term 2 or Term 3.',
             'danger'
         )
-    
+
         return redirect(
             url_for(
                 'teacher_upload_marks',
-                class_name=session.get('selected_class')
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=session.get(
+                    'selected_term',
+                    'Term 1'
+                ),
+                year=session.get(
+                    'selected_year',
+                    datetime.now().year
+                )
             )
         )
-    
+
+    # =========================================================
+    # VALIDATE SUBJECT
+    # =========================================================
+
+    if not subject:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter the subject.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=year
+            )
+        )
+
+    # =========================================================
+    # VALIDATE TEACHER INITIALS
+    # =========================================================
+
+    if not teacher_initials:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter teacher initials.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=year
+            )
+        )
+
+    # =========================================================
+    # VALIDATE YEAR
+    # =========================================================
+
+    try:
+
+        year = int(year)
+
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        year = session.get(
+            'selected_year',
+            datetime.now().year
+        )
+
+    if year < 2000 or year > 2100:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter a valid year.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=session.get(
+                    'selected_year',
+                    datetime.now().year
+                )
+            )
+        )
+
+    # =========================================================
+    # REMEMBER TERM AND YEAR
+    # =========================================================
+
+    session['selected_term'] = term
+    session['selected_year'] = year
+
     # =========================================================
     # GET FORM DATA
     # =========================================================
-    student_ids = request.form.getlist("student_id[]")
-    paper1_values = request.form.getlist("paper1[]")
-    paper2_values = request.form.getlist("paper2[]")
-    initials = request.form.getlist("teacher_initials[]")
-    
+
+    student_ids = request.form.getlist(
+        "student_id[]"
+    )
+
+    paper1_values = request.form.getlist(
+        "paper1[]"
+    )
+
+    paper2_values = request.form.getlist(
+        "paper2[]"
+    )
+
     # =========================================================
     # CONVERT MARK TO NUMBER
-    # EMPTY FIELD = NONE
+    #
+    # EMPTY = NONE
+    # MAXIMUM = 100
     # =========================================================
+
     def parse_mark(value):
-    
+
         if value is None:
             return None
-    
+
         value = str(value).strip()
-    
+
         if value == '':
             return None
-    
+
         try:
+
             mark = float(value)
-    
-            # Do not allow negative marks
+
             if mark < 0:
                 return None
-    
-            # Maximum mark for EACH PAPER is 100
-            return min(mark, 100)
-    
-        except (ValueError, TypeError):
+
+            return min(
+                mark,
+                100
+            )
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
             return None
-    
+
     # =========================================================
     # PROCESS EACH STUDENT
     # =========================================================
-    for i, sid in enumerate(student_ids):
-    
+
+    for i, sid in enumerate(
+        student_ids
+    ):
+
         # -----------------------------------------------------
         # PAPER 1
         # -----------------------------------------------------
+
         p1 = parse_mark(
             paper1_values[i]
             if i < len(paper1_values)
             else None
         )
-    
+
         # -----------------------------------------------------
         # PAPER 2
         # -----------------------------------------------------
+
         p2 = parse_mark(
             paper2_values[i]
             if i < len(paper2_values)
             else None
         )
-    
+
         # -----------------------------------------------------
-        # TEACHER INITIALS
+        # BOTH PAPERS EMPTY
         # -----------------------------------------------------
-        init = (
-            initials[i].strip()
-            if i < len(initials) and initials[i]
-            else ''
-        )
-    
-        # =====================================================
-        # IF NO PAPER WAS ENTERED, SKIP STUDENT
-        # =====================================================
+
         if p1 is None and p2 is None:
             continue
-    
+
         # =====================================================
         # CALCULATE FINAL MARK
-        #
-        # BOTH PAPERS:
-        #       Average of Paper 1 and Paper 2
-        #
-        # PAPER 1 ONLY:
-        #       Paper 1
-        #
-        # PAPER 2 ONLY:
-        #       Paper 2
         # =====================================================
-        if p1 is not None and p2 is not None:
-    
-            final_mark = (p1 + p2) / 2
-    
+
+        if (
+            p1 is not None
+            and p2 is not None
+        ):
+
+            final_mark = (
+                p1 + p2
+            ) / 2
+
         elif p1 is not None:
-    
+
             final_mark = p1
-    
+
         else:
-    
+
             final_mark = p2
-    
-        # Round final mark to 2 decimal places
-        final_mark = round(final_mark, 2)
-    
+
+        final_mark = round(
+            final_mark,
+            2
+        )
+
         # =====================================================
-        # INSERT OR UPDATE MARK
+        # GET GRADE AND POINTS
         # =====================================================
+
+        cursor.execute(
+            """
+            SELECT
+                grade,
+                points
+            FROM alevel_grading
+            WHERE is_subsidiary = 0
+              AND min_score <= %s
+              AND max_score >= %s
+            ORDER BY min_score DESC
+            LIMIT 1
+            """,
+            (
+                final_mark,
+                final_mark
+            )
+        )
+
+        grading = cursor.fetchone()
+
+        if grading:
+
+            grade = grading['grade']
+            points = grading['points']
+
+        else:
+
+            grade = None
+            points = None
+
+        # =====================================================
+        # INSERT OR UPDATE
+        # =====================================================
+
         cursor.execute(
             """
             INSERT INTO marks
@@ -5477,19 +7659,53 @@ def save_manual_marks():
                 paper1,
                 paper2,
                 final_mark,
+                grade,
+                points,
                 teacher_initials,
                 term,
                 year
             )
             VALUES
-            (%s, %s, %s, %s, %s, %s, %s, %s)
-    
-            ON CONFLICT (student_id, subject, term, year)
+            (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+
+            ON CONFLICT
+            (
+                student_id,
+                subject,
+                term,
+                year
+            )
+
             DO UPDATE SET
-                paper1 = EXCLUDED.paper1,
-                paper2 = EXCLUDED.paper2,
-                final_mark = EXCLUDED.final_mark,
-                teacher_initials = EXCLUDED.teacher_initials
+
+                paper1 =
+                    EXCLUDED.paper1,
+
+                paper2 =
+                    EXCLUDED.paper2,
+
+                final_mark =
+                    EXCLUDED.final_mark,
+
+                grade =
+                    EXCLUDED.grade,
+
+                points =
+                    EXCLUDED.points,
+
+                teacher_initials =
+                    EXCLUDED.teacher_initials
             """,
             (
                 sid,
@@ -5497,226 +7713,431 @@ def save_manual_marks():
                 p1,
                 p2,
                 final_mark,
-                init,
+                grade,
+                points,
+                teacher_initials,
                 term,
                 year
             )
         )
-    
+
     # =========================================================
-    # SAVE CHANGES
+    # SAVE
     # =========================================================
+
     db.commit()
-    
+
     cursor.close()
     db.close()
-    
+
     # =========================================================
     # SUCCESS MESSAGE
     # =========================================================
+
     flash(
-        f"Marks for {term} entered successfully.",
+        f"A-Level marks for {term} {year} entered successfully.",
         "success"
     )
-    
+
     # =========================================================
-    # RETURN TO MARK ENTRY PAGE
+    # RETURN TO MARK ENTRY
     # =========================================================
+
     return redirect(
         url_for(
             'teacher_upload_marks',
             class_name=session.get('selected_class'),
-            term=term
+            term=term,
+            year=year,
+            subject=subject
         )
     )
 
-@app.route('/teacher/upload_marks', methods=['GET', 'POST'])
-def teacher_upload_marks():
-    if not check_permission(['classteacher', 'subject_teacher', 'dos']):
-        abort(403)
-    teacher_id = session.get('user_id')
-    assignments = get_user_assignments(teacher_id)
-    if not assignments:
-        flash('No classes assigned.', 'danger')
-        return redirect(url_for('dashboard'))
-    available_classes = list(
-        set(
-            [a['class_name'] for a in assignments]
-        )
-    )
-    selected_class = request.args.get(
-        'class_name',
-        session.get(
-            'selected_class',
-            available_classes[0]
-        )
-    )
-    if selected_class not in available_classes:
-        selected_class = available_classes[0]
-    session['selected_class'] = selected_class
-    class_upper = selected_class.upper()
-    level = (
-        'alevel'
-        if (
-            class_upper in [
-                'S5',
-                'S6',
-                'A-LEVEL',
-                'A LEVEL',
-                'S.5',
-                'S.6'
-            ]
-            or
-            (
-                class_upper.startswith('S')
-                and len(class_upper) >= 2
-                and class_upper[1] in ['5', '6']
-            )
-        )
-        else 'olevel'
-    )
-    current_year = datetime.now().year
-    # ===============================
-    # GET STUDENTS FOR MANUAL ENTRY
-    # ===============================
-    db = get_db_dict()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT student_id, full_name
-        FROM students
-        WHERE class=%s
-        ORDER BY full_name
-        """,
-        (selected_class,)
-    )
-    students = cur.fetchall()
-    cur.close()
-    # ===============================
-    # EXCEL UPLOAD PROCESS
-    # ===============================
-    if request.method == "POST":
-        subject = request.form.get(
-            'subject',
-            ''
-        ).strip()
-        term = request.form.get(
-            'term',
-            'Term 1'
-        ).strip()
-        year = request.form.get(
-            'year',
-            current_year
-        )
-        is_subsidiary = (
-            request.form.get('is_subsidiary') == 'on'
-        )
-        file = request.files.get(
-            'marks_file'
-        )
-        if not file or not file.filename:
-            flash(
-                'Please upload an Excel file.',
-                'danger'
-            )
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class
-                )
-            )
-        count = process_marks_upload(
-            file,
-            subject,
-            term,
-            year,
-            selected_class,
-            teacher_id,
-            level,
-            is_subsidiary
-        )
-        flash(
-            f'{count} marks uploaded successfully.',
-            'success'
-        )
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=selected_class
-            )
-        )
-    # ===============================
-    # LOAD TEMPLATE
-    # ===============================
-    return render_template(
-        f'teacher/upload_marks_{level}.html',
-        assigned_class=selected_class,
-        current_year=current_year,
-        teacher_classes=[
-            {
-                'class_name': c
-            }
-            for c in available_classes
-        ],
-        selected_class=selected_class,
-        students=students
-    )
-    
 @app.route("/save_olevel_marks", methods=["POST"])
 def save_olevel_marks():
-    if not check_permission(['classteacher', 'subject_teacher', 'dos']):
+
+    if not check_permission(
+        ['classteacher', 'subject_teacher', 'dos']
+    ):
         abort(403)
 
     db = get_db_dict()
     cursor = db.cursor()
 
-    subject = request.form.get('subject')
-    term = request.form.get('term')
-    year = request.form.get('year')
+    # =========================================================
+    # GET COMMON DETAILS
+    # =========================================================
 
-    student_ids = request.form.getlist("student_id[]")
-    ai1_raw = request.form.getlist("ai1[]")
-    ai2_raw = request.form.getlist("ai2[]")
-    ai3_raw = request.form.getlist("ai3[]")
-    eot_raw = request.form.getlist("eot_score[]")
-    initials = request.form.getlist("teacher_initials[]")
+    subject = request.form.get(
+        'subject',
+        ''
+    ).strip()
+
+    term = request.form.get(
+        'term',
+        ''
+    ).strip()
+
+    year = request.form.get(
+        'year',
+        ''
+    )
+
+    teacher_initials = request.form.get(
+        'teacher_initials',
+        ''
+    ).strip()
+
+    # =========================================================
+    # ALLOWED TERMS
+    # =========================================================
+
+    allowed_terms = [
+        'Term 1',
+        'Term 2',
+        'Term 3'
+    ]
+
+    if term not in allowed_terms:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Invalid term. Please select Term 1, Term 2 or Term 3.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=session.get(
+                    'selected_term',
+                    'Term 1'
+                ),
+                year=session.get(
+                    'selected_year',
+                    datetime.now().year
+                )
+            )
+        )
+
+    # =========================================================
+    # SUBJECT VALIDATION
+    # =========================================================
+
+    if not subject:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter the subject.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=year
+            )
+        )
+
+    # =========================================================
+    # TEACHER INITIALS VALIDATION
+    # =========================================================
+
+    if not teacher_initials:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter teacher initials.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=year
+            )
+        )
+
+    # =========================================================
+    # YEAR VALIDATION
+    # =========================================================
+
+    try:
+
+        year = int(year)
+
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        year = session.get(
+            'selected_year',
+            datetime.now().year
+        )
+
+    if year < 2000 or year > 2100:
+
+        cursor.close()
+        db.close()
+
+        flash(
+            'Please enter a valid year.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=session.get(
+                    'selected_class'
+                ),
+                term=term,
+                year=session.get(
+                    'selected_year',
+                    datetime.now().year
+                )
+            )
+        )
+
+    # =========================================================
+    # REMEMBER TERM AND YEAR
+    # =========================================================
+
+    session['selected_term'] = term
+    session['selected_year'] = year
+
+    # =========================================================
+    # GET MARK DATA
+    # =========================================================
+
+    student_ids = request.form.getlist(
+        "student_id[]"
+    )
+
+    ai1_raw = request.form.getlist(
+        "ai1[]"
+    )
+
+    ai2_raw = request.form.getlist(
+        "ai2[]"
+    )
+
+    ai3_raw = request.form.getlist(
+        "ai3[]"
+    )
+
+    eot_raw = request.form.getlist(
+        "eot_score[]"
+    )
+
+    # =========================================================
+    # CLEAN SCORE
+    # =========================================================
 
     def clean_score(value):
+
         if value is None:
             return None
+
         value = str(value).strip()
+
         if value == '':
             return None
+
         try:
-            return float(value)
-        except (ValueError, TypeError):
+
+            score = float(value)
+
+            # Prevent negative marks
+            if score < 0:
+                return None
+
+            # Maximum raw score = 100
+            return min(
+                score,
+                100
+            )
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
             return None
 
-    for i, sid in enumerate(student_ids):
-        a1 = clean_score(ai1_raw[i] if i < len(ai1_raw) else None)
-        a2 = clean_score(ai2_raw[i] if i < len(ai2_raw) else None)
-        a3 = clean_score(ai3_raw[i] if i < len(ai3_raw) else None)
-        e = clean_score(eot_raw[i] if i < len(eot_raw) else None)
-        init = initials[i].strip() if i < len(initials) else ''
+    # =========================================================
+    # PROCESS STUDENTS
+    # =========================================================
 
-        ai_scores = [score for score in [a1, a2, a3] if score is not None]
+    for i, sid in enumerate(
+        student_ids
+    ):
+
+        # -----------------------------------------------------
+        # AI1
+        # -----------------------------------------------------
+
+        a1 = clean_score(
+            ai1_raw[i]
+            if i < len(ai1_raw)
+            else None
+        )
+
+        # -----------------------------------------------------
+        # AI2
+        # -----------------------------------------------------
+
+        a2 = clean_score(
+            ai2_raw[i]
+            if i < len(ai2_raw)
+            else None
+        )
+
+        # -----------------------------------------------------
+        # AI3
+        # -----------------------------------------------------
+
+        a3 = clean_score(
+            ai3_raw[i]
+            if i < len(ai3_raw)
+            else None
+        )
+
+        # -----------------------------------------------------
+        # EOT
+        # -----------------------------------------------------
+
+        e = clean_score(
+            eot_raw[i]
+            if i < len(eot_raw)
+            else None
+        )
+
+        # =====================================================
+        # GET AVAILABLE AI SCORES
+        # =====================================================
+
+        ai_scores = [
+            score
+            for score in [
+                a1,
+                a2,
+                a3
+            ]
+            if score is not None
+        ]
+
+        # =====================================================
+        # AI AVERAGE
+        # =====================================================
 
         ai_average = (
-            sum(ai_scores) / len(ai_scores)
-            if ai_scores else None
+
+            sum(ai_scores)
+            / len(ai_scores)
+
+            if ai_scores
+            else None
+
         )
 
-        ai_contribution = (
-            (ai_average / 3) * 20
-            if ai_average is not None else 0
+        # =====================================================
+        # AI CONTRIBUTION
+        #
+        # AI contributes 20 marks.
+        #
+        # AI average is out of 3.
+        # =====================================================
+
+        if ai_average is not None:
+
+            ai_contribution = (
+                ai_average / 3
+            ) * 20
+
+        else:
+
+            ai_contribution = 0
+
+        # =====================================================
+        # EOT CONTRIBUTION
+        #
+        # EOT contributes maximum 80 marks.
+        # =====================================================
+
+        if e is not None:
+
+            eot_contribution = max(
+                0,
+                min(
+                    e,
+                    80
+                )
+            )
+
+        else:
+
+            eot_contribution = 0
+
+        # =====================================================
+        # TOTAL SCORE
+        # =====================================================
+
+        total_score = (
+            ai_contribution
+            + eot_contribution
         )
-        eot_contribution = max(0, min(e, 80)) if e is not None else 0
-        total_score = ai_contribution + eot_contribution
-        grade, descriptor = get_grade_and_descriptor(total_score)
-        identifier = (
-            round((total_score / 100) * 3, 2)
-            if total_score is not None else None
+
+        total_score = round(
+            total_score,
+            2
         )
+
+        # =====================================================
+        # GRADE + DESCRIPTOR
+        # =====================================================
+
+        grade, descriptor = (
+            get_grade_and_descriptor(
+                total_score
+            )
+        )
+
+        # =====================================================
+        # GENERAL IDENTIFIER
+        #
+        # Convert percentage to identifier out of 3.
+        # =====================================================
+
+        identifier = round(
+            (
+                total_score / 100
+            ) * 3,
+            2
+        )
+
+        # =====================================================
+        # INSERT OR UPDATE
+        # =====================================================
+
         cursor.execute(
             """
             INSERT INTO marks
@@ -5737,61 +8158,127 @@ def save_olevel_marks():
                 term,
                 year
             )
+
             VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT(student_id,subject,term,year)
+            (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+
+            ON CONFLICT
+            (
+                student_id,
+                subject,
+                term,
+                year
+            )
+
             DO UPDATE SET
-                ai1=%s,
-                ai2=%s,
-                ai3=%s,
-                ai_average=%s,
-                ai_contribution=%s,
-                eot_score=%s,
-                total_score=%s,
-                grade=%s,
-                identifier=%s,
-                descriptor=%s,
-                teacher_initials=%s
+
+                ai1 =
+                    EXCLUDED.ai1,
+
+                ai2 =
+                    EXCLUDED.ai2,
+
+                ai3 =
+                    EXCLUDED.ai3,
+
+                ai_average =
+                    EXCLUDED.ai_average,
+
+                ai_contribution =
+                    EXCLUDED.ai_contribution,
+
+                eot_score =
+                    EXCLUDED.eot_score,
+
+                total_score =
+                    EXCLUDED.total_score,
+
+                grade =
+                    EXCLUDED.grade,
+
+                identifier =
+                    EXCLUDED.identifier,
+
+                descriptor =
+                    EXCLUDED.descriptor,
+
+                teacher_initials =
+                    EXCLUDED.teacher_initials
             """,
+
             (
                 sid,
                 subject,
+
                 a1,
                 a2,
                 a3,
+
                 ai_average,
                 ai_contribution,
+
                 e,
+
                 total_score,
+
                 grade,
+
                 identifier,
+
                 descriptor,
-                init,
+
+                teacher_initials,
+
                 term,
-                year,
-                a1,
-                a2,
-                a3,
-                ai_average,
-                ai_contribution,
-                e,
-                total_score,
-                grade,
-                identifier,
-                descriptor,
-                init
+                year
             )
         )
 
-    db.commit()
-    cursor.close()
+    # =========================================================
+    # SAVE
+    # =========================================================
 
-    flash("O-Level marks entered successfully.", "success")
+    db.commit()
+
+    cursor.close()
+    db.close()
+
+    # =========================================================
+    # SUCCESS MESSAGE
+    # =========================================================
+
+    flash(
+        f"O-Level marks for {term} {year} entered successfully.",
+        "success"
+    )
+
+    # =========================================================
+    # RETURN TO MARK ENTRY
+    # =========================================================
 
     return redirect(
         url_for(
             'teacher_upload_marks',
-            class_name=session.get('selected_class')
+            class_name=session.get('selected_class'),
+            term=term,
+            year=year,
+            subject=subject
         )
     )
 @app.route('/teacher/report_card/<student_id>')
@@ -5922,16 +8409,33 @@ def teacher_report_card(student_id):
     photo_url = get_photo_url(
         student['photo_path']
     )
+    # =========================================================
+    # =========================================================
+# CURRENT REPORT CARD TERM AND YEAR
+# =========================================================
 
-
-    term = request.args.get(
-        'term',
-        'Term 1'
+    cur.execute(
+        """
+        SELECT
+            current_term,
+            current_year
+        FROM school_settings
+        WHERE id = 1
+        """
     )
-
-    year = request.args.get(
-        'year',
-        datetime.now().year
+    
+    report_settings = cur.fetchone()
+    
+    term = (
+        report_settings['current_term']
+        if report_settings and report_settings['current_term']
+        else 'Term 1'
+    )
+    
+    year = (
+        report_settings['current_year']
+        if report_settings and report_settings['current_year']
+        else datetime.now().year
     )
     cur.execute(
         """
@@ -5972,15 +8476,16 @@ def teacher_report_card(student_id):
         if school else
         ''
     )
-
-    school_logo_url = (
-        school['logo_url']
-        if school and school['logo_url']
-        else url_for(
+    if school['logo_url']:
+        school_logo_url = url_for(
+            'static',
+            filename='uploads/' + school['logo_url']
+        )
+    else:
+        school_logo_url = url_for(
             'static',
             filename='images/logo.png'
         )
-    )
 
 
     cur.execute(
@@ -5995,8 +8500,6 @@ def teacher_report_card(student_id):
     )
 
     settings = cur.fetchone()
-
-
     next_term_begins = (
         settings['next_term_begins']
         if settings else None
@@ -6017,22 +8520,24 @@ def teacher_report_card(student_id):
         if settings and settings['headteacher_stamp']
         else None
     )
-    class_upper = class_name.upper()
+    # Determine whether the student is A-Level
+    class_upper = (class_name or '').strip().upper()
+    
+    # Remove dots and spaces so that:
+    # S.5ARTS  -> S5ARTS
+    # S.6ARTS  -> S6ARTS
+    # S5       -> S5
+    # S6       -> S6
+    normalized_class = (
+        class_upper
+        .replace('.', '')
+        .replace(' ', '')
+    )
+    
     is_alevel = (
-        class_upper in [
-            'S5',
-            'S6',
-            'A-LEVEL',
-            'A LEVEL',
-            'S.5',
-            'S.6'
-        ]
-        or
-        (
-            class_upper.startswith('S')
-            and len(class_upper) >= 2
-            and class_upper[1] in ['5','6']
-        )
+        normalized_class.startswith('S5')
+        or normalized_class.startswith('S6')
+        or class_upper in ['A-LEVEL', 'A LEVEL', 'ALEVEL']
     )
     if is_alevel:
 
@@ -6042,7 +8547,7 @@ def teacher_report_card(student_id):
                 subject,
                 paper1,
                 paper2,
-                total_score,
+                final_mark,
                 grade,
                 points,
                 teacher_initials
@@ -6058,7 +8563,22 @@ def teacher_report_card(student_id):
                 year
             )
         )
-        marks = cur.fetchall()
+        raw_marks = cur.fetchall()
+
+        marks = [
+            m
+            for m in raw_marks
+            if any(
+                m[field] not in [None, '']
+                for field in [
+                    'paper1',
+                    'paper2',
+                    'final_mark',
+                    'grade',
+                    'points'
+                ]
+            )
+        ]
         total_points = sum(
             m['points']
             for m in marks
@@ -6124,15 +8644,25 @@ def teacher_report_card(student_id):
                 year
             )
         )
-
-
         raw_marks = cur.fetchall()
 
         marks = []
-
-
+        
+        
         for m in raw_marks:
-
+        
+            # =====================================================
+            # SKIP SUBJECT IF NO MARKS HAVE BEEN ENTERED
+            # =====================================================
+        
+            if (
+                m['ai1'] in [None, '']
+                and m['ai2'] in [None, '']
+                and m['ai3'] in [None, '']
+                and m['eot_score'] in [None, '']
+            ):
+                continue
+        
             ai_scores = []
 
             if m['ai1'] not in [None,'']:
@@ -6173,10 +8703,7 @@ def teacher_report_card(student_id):
                 ai_contribution +
                 eot_contribution
             )
-            
-            grade, descriptor = get_olevel_grade_details(
-                total_score
-            )
+            grade, descriptor = get_grade_and_descriptor(total_score)
             
             identifier = round(
                 (total_score / 100) * 3,
@@ -6227,10 +8754,9 @@ def teacher_report_card(student_id):
         general_identifier = round(
             (general_average / 100) * 3,
             2
-        )   
-        general_grade, general_descriptor = get_olevel_grade_details(
-            general_average
-        )
+        )  
+        general_grade, general_descriptor = get_grade_and_descriptor(general_average)
+        
         olevel_teacher_comment = get_olevel_class_teacher_comment(
             general_identifier
         )
@@ -6858,7 +9384,7 @@ def teacher_upload_students():
                 # ---------------------------------------------
 
                 student_id = generate_student_id()
-
+                qr_token = generate_qr_token()
                 # ---------------------------------------------
                 # INSERT
                 # ---------------------------------------------
@@ -6872,6 +9398,7 @@ def teacher_upload_students():
                         parent_phone,
                         programme,
                         residence,
+                        qr_token,
                         admission_status,
                         fees_total,
                         fees_paid,
@@ -6884,7 +9411,7 @@ def teacher_upload_students():
                         %s,
                         %s,
                         %s,
-                        %s,
+                        %s,%s,
                         'approved',
                         0,
                         0,
@@ -6896,7 +9423,7 @@ def teacher_upload_students():
                     assigned_class,
                     parent_phone,
                     programme or None,
-                    residence or None
+                    residence or None, qr_token
                 ))
 
                 success_count += 1
@@ -7232,107 +9759,116 @@ def teacher_upload_students():
         'teacher/upload_students.html'
     )
 @app.route('/teacher/print_all_report_cards')
-def teacher_print_all_report_cards():
+def print_all_report_cards():
 
-    if not check_permission(['classteacher']):
+    # ============================================================
+    # PERMISSION
+    # ============================================================
+
+    if not check_permission([
+        'classteacher',
+        'subject_teacher',
+        'dos',
+        'headteacher'
+    ]):
         abort(403)
-    # =========================================================
-    # GET SELECTED CLASS
-    # =========================================================
+
+    db = get_db_dict()
+    cur = db.cursor()
+    # ============================================================
+    # CLASS, TERM AND YEAR
+    # ============================================================
+    
+    class_name = request.args.get(
+        'class_name',
+        session.get('selected_class', '')
+    ).strip()
+    
+    # ------------------------------------------------------------
+    # GET ACTIVE TERM AND YEAR FROM DOS REPORT SETTINGS
+    # ------------------------------------------------------------
+    
+    cur.execute(
+        """
+        SELECT
+            current_term,
+            current_year
+        FROM school_settings
+        WHERE id = 1
+        """
+    )
+    
+    report_settings = cur.fetchone()
+    
+    allowed_terms = [
+        'Term 1',
+        'Term 2',
+        'Term 3'
+    ]
+    
+    if report_settings:
+    
+        term = (
+            report_settings['current_term']
+            or 'Term 1'
+        ).strip()
+    
+        year = (
+            report_settings['current_year']
+            or datetime.now().year
+        )
+    
+    else:
+    
+        term = 'Term 1'
+        year = datetime.now().year
+    
+    # ------------------------------------------------------------
+    # VALIDATE TERM
+    # ------------------------------------------------------------
+    
+    if term not in allowed_terms:
+        term = 'Term 1'
+    
+    # ------------------------------------------------------------
+    # OPTIONAL URL OVERRIDE
+    # ------------------------------------------------------------
     #
-    # First use the class coming from the URL.
-    # This is important when the teacher has more than one class.
+    # If a specific term/year is deliberately supplied in the URL,
+    # allow it to override the active school setting.
     #
-    selected_class = request.args.get('class_name')
+    # Otherwise, the DOS setting remains the default.
+    # ------------------------------------------------------------
+    
+    url_term = request.args.get('term')
+    
+    if url_term and url_term.strip() in allowed_terms:
+        term = url_term.strip()
+    
+    url_year = request.args.get('year', type=int)
+    
+    if url_year and 2000 <= url_year <= 2100:
+        year = url_year
 
-    if not selected_class:
-        selected_class = session.get('selected_class')
-
-    if not selected_class:
-        selected_class = session.get('assigned_class')
-
-    if not selected_class:
+    if not class_name:
 
         flash(
-            'No class selected or assigned to you.',
+            'No class selected.',
             'danger'
         )
+
+        cur.close()
 
         return redirect(
             url_for('teacher_students')
         )
 
-    # Keep the selected class in the session as well
-    session['selected_class'] = selected_class
+    # ============================================================
+    # GET SCHOOL SETTINGS
+    # ============================================================
 
-
-    # =========================================================
-    # GET TERM AND YEAR
-    # =========================================================
-
-    term = request.args.get(
-        'term',
-        'Term 1'
-    )
-
-    year = request.args.get(
-        'year',
-        datetime.now().year
-    )
-
-
-    # =========================================================
-    # DATABASE
-    # =========================================================
-
-    db = get_db()
-    cur = db.cursor()
-
-
-    # =========================================================
-    # GET STUDENTS IN SELECTED CLASS
-    # =========================================================
-
-    cur.execute("""
-        SELECT
-            student_id,
-            full_name,
-            photo_path
-        FROM students
-        WHERE class=%s
-        ORDER BY full_name
-    """,
-    (
-        selected_class,
-    ))
-
-    students_data = cur.fetchall()
-
-
-    if not students_data:
-
-        cur.close()
-
-        flash(
-            f'No students found in class {selected_class}.',
-            'warning'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_students',
-                class_name=selected_class,
-                term=term,
-                year=year
-            )
-        )
-
-
-    # =========================================================
-    # SCHOOL SETTINGS
-    # =========================================================
-
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             school_name,
             school_address,
@@ -7344,127 +9880,161 @@ def teacher_print_all_report_cards():
             headteacher_stamp
         FROM school_settings
         WHERE id=1
-    """)
-
-    school_data = cur.fetchone()
-
-
-    school_name = (
-        school_data['school_name']
-        if school_data and school_data['school_name']
-        else 'YOUR SCHOOL NAME'
+        """
     )
 
+    school = cur.fetchone()
 
-    school_address = (
-        school_data['school_address']
-        if school_data and school_data['school_address']
-        else 'P.O. Box 123, Kampala, Uganda'
-    )
+    if school:
 
+        school_name = (
+            school['school_name']
+            or 'YOUR SCHOOL NAME'
+        )
 
-    school_phone = (
-        school_data['school_phone']
-        if school_data and school_data['school_phone']
-        else 'Tel: +256 712 345678'
-    )
+        school_address = (
+            school['school_address']
+            or ''
+        )
 
+        school_phone = (
+            school['school_phone']
+            or ''
+        )
 
-    school_email = (
-        school_data['school_email']
-        if school_data and school_data['school_email']
-        else 'Email: info@school.com'
-    )
+        school_email = (
+            school['school_email']
+            or ''
+        )
+        if school['logo_url']:
+            school_logo_url = url_for(
+                'static',
+                filename='uploads/' + school['logo_url']
+            )
+        else:
+            school_logo_url = url_for(
+                'static',
+                filename='images/logo.png'
+            )
 
+        next_term_begins = (
+            school['next_term_begins']
+        )
 
-    school_logo_url = (
-        school_data['logo_url']
-        if school_data and school_data['logo_url']
-        else url_for(
+        next_term_ends = (
+            school['next_term_ends']
+        )
+
+        stamp_url = (
+            url_for(
+                'static',
+                filename=
+                'uploads/' +
+                school['headteacher_stamp']
+            )
+            if school['headteacher_stamp']
+            else None
+        )
+
+    else:
+
+        school_name = 'YOUR SCHOOL NAME'
+        school_address = ''
+        school_phone = ''
+        school_email = ''
+
+        school_logo_url = url_for(
             'static',
             filename='images/logo.png'
         )
+
+        next_term_begins = None
+        next_term_ends = None
+        stamp_url = None
+
+    # ============================================================
+    # GET STUDENTS
+    # ============================================================
+
+    cur.execute(
+        """
+        SELECT
+            student_id,
+            full_name,
+            class,
+            lin,
+            photo_path
+        FROM students
+        WHERE class=%s
+        ORDER BY full_name
+        """,
+        (class_name,)
     )
 
+    students = cur.fetchall()
 
-    next_term_begins = (
-        school_data['next_term_begins']
-        if school_data
-        else None
-    )
+    reports = []
 
+    # ============================================================
+    # BUILD REPORT FOR EACH STUDENT
+    # ============================================================
 
-    next_term_ends = (
-        school_data['next_term_ends']
-        if school_data
-        else None
-    )
+    for student in students:
 
-
-    # =========================================================
-    # HEADTEACHER STAMP
-    # =========================================================
-
-    stamp_url = None
-
-    if school_data and school_data['headteacher_stamp']:
-
-        stamp_url = url_for(
-            'static',
-            filename='uploads/' +
-            school_data['headteacher_stamp']
-        )
-
-
-    # =========================================================
-    # DETERMINE A-LEVEL / O-LEVEL
-    # =========================================================
-
-    class_upper = selected_class.upper()
-
-    is_alevel = (
-        class_upper in [
-            'S5',
-            'S6',
-            'A-LEVEL',
-            'A LEVEL',
-            'S.5',
-            'S.6'
-        ]
-        or
-        (
-            class_upper.startswith('S')
-            and len(class_upper) >= 2
-            and class_upper[1] in ['5', '6']
-        )
-    )
-    # =========================================================
-    # BUILD ALL REPORTS
-    # =========================================================
-    
-    all_reports = []
-    
-    for student in students_data:
-    
         student_id = student['student_id']
+
         full_name = student['full_name']
-    
+
+        student_class = student['class']
+
+        lin = student['lin']
+
         photo_url = get_photo_url(
             student['photo_path']
         )
-    
-        # =====================================================
-        # A-LEVEL
-        # =====================================================
-    
+
+        # ========================================================
+        # DETERMINE A-LEVEL
+        # ========================================================
+
+        class_upper = str(
+            student_class or ''
+        ).strip().upper()
+
+        normalized_class = (
+            class_upper
+            .replace('.', '')
+            .replace(' ', '')
+            .replace('-', '')
+            .replace("'", '')
+            .replace('"', '')
+        )
+
+        is_alevel = (
+            normalized_class.startswith('S5')
+            or
+            normalized_class.startswith('S6')
+            or
+            normalized_class in [
+                'ALEVEL',
+                'ADVANCEDLEVEL',
+                'ADVANCEDLEVELS'
+            ]
+        )
+
+        # ========================================================
+        # A-LEVEL REPORT
+        # ========================================================
+
         if is_alevel:
-    
-            cur.execute("""
+
+            cur.execute(
+                """
                 SELECT
                     subject,
                     paper1,
                     paper2,
-                    total_score,
+                    final_mark,
                     grade,
                     points,
                     teacher_initials
@@ -7473,58 +10043,89 @@ def teacher_print_all_report_cards():
                 AND term=%s
                 AND year=%s
                 ORDER BY subject
-            """,
-            (
-                student_id,
-                term,
-                year
-            ))
-    
-            marks = cur.fetchall()
-    
-            # =================================================
-            # A-LEVEL TOTAL POINTS
-            # =================================================
-    
+                """,
+                (
+                    student_id,
+                    term,
+                    year
+                )
+            )
+            raw_marks = cur.fetchall()
+        
+            marks = [
+                m
+                for m in raw_marks
+                if any(
+                    m[field] not in [None, '']
+                    for field in [
+                        'paper1',
+                        'paper2',
+                        'final_mark',
+                        'grade',
+                        'points'
+                    ]
+                )
+            ]
+            # ----------------------------------------------------
+            # TOTAL POINTS
+            # ----------------------------------------------------
+
             total_points = sum(
                 float(m['points'])
                 for m in marks
                 if m['points'] is not None
-            ) if marks else 0
-            
+            )
+
+            # ----------------------------------------------------
             # A-LEVEL COMMENTS
-            alevel_teacher_comment = (
+            # ----------------------------------------------------
+
+            teacher_comment = (
                 get_alevel_class_teacher_comment(
                     total_points
                 )
             )
-            alevel_headteacher_comment = (
+
+            headteacher_comment = (
                 get_alevel_headteacher_comment(
                     total_points
                 )
             )
-            # SAVE A-LEVEL REPORT
-            all_reports.append({
-                'student_id': student_id,
-                'full_name': full_name,
-                'photo_url': photo_url,
-                'marks': marks,
-                'total_points':
-                    total_points,
-                'teacher_comment':
-                    alevel_teacher_comment,
-                'headteacher_comment':
-                    alevel_headteacher_comment
-            })
-    
-    
-        # =====================================================
-        # O-LEVEL
-        # =====================================================
-    
+
+            # ----------------------------------------------------
+            # ADD REPORT
+            # ----------------------------------------------------
+
+            reports.append(
+                {
+                    'student_id': student_id,
+                    'full_name': full_name,
+                    'class_name': student_class,
+                    'lin': lin,
+                    'photo_url': photo_url,
+
+                    'is_alevel': True,
+
+                    'marks': marks,
+
+                    'total_points': total_points,
+
+                    'teacher_comment':
+                        teacher_comment,
+
+                    'headteacher_comment':
+                        headteacher_comment
+                }
+            )
+
+        # ========================================================
+        # O-LEVEL REPORT
+        # ========================================================
+
         else:
-    
-            cur.execute("""
+
+            cur.execute(
+                """
                 SELECT
                     subject,
                     ai1,
@@ -7543,67 +10144,66 @@ def teacher_print_all_report_cards():
                 AND term=%s
                 AND year=%s
                 ORDER BY subject
-            """,
-            (
-                student_id,
-                term,
-                year
-            ))
-    
+                """,
+                (
+                    student_id,
+                    term,
+                    year
+                )
+            )
             raw_marks = cur.fetchall()
-    
+
             marks = []
-    
+            
+            
             for m in raw_marks:
-    
+            
+                # =====================================================
+                # SKIP SUBJECT IF NO MARKS HAVE BEEN ENTERED
+                # =====================================================
+            
+                if (
+                    m['ai1'] in [None, '']
+                    and m['ai2'] in [None, '']
+                    and m['ai3'] in [None, '']
+                    and m['eot_score'] in [None, '']
+                ):
+                    continue
+            
                 ai_scores = []
-    
+
                 if m['ai1'] not in [None, '']:
                     ai_scores.append(
                         float(m['ai1'])
                     )
-    
+
                 if m['ai2'] not in [None, '']:
                     ai_scores.append(
                         float(m['ai2'])
                     )
-    
+
                 if m['ai3'] not in [None, '']:
                     ai_scores.append(
                         float(m['ai3'])
                     )
-    
-                # =================================================
+
                 # AI AVERAGE
-                # =================================================
-    
                 ai_average = (
                     sum(ai_scores) / len(ai_scores)
                     if ai_scores
                     else 0
                 )
-    
-                # =================================================
-                # AI CONTRIBUTION
-                # AI average is out of 3.
-                # Convert to contribution out of 20.
-                # =================================================
-    
+
+                # AI CONTRIBUTION OUT OF 20
                 ai_contribution = (
                     (ai_average / 3) * 20
                     if ai_average > 0
                     else 0
                 )
-    
-                # =================================================
-                # EOT
-                #
-                # EOT is already out of 80.
-                # Only constrain it to 0-80.
-                # =================================================
-    
+
+                # EOT OUT OF 80
                 eot_score = m['eot_score']
-    
+
                 eot_contribution = (
                     max(
                         0,
@@ -7615,215 +10215,716 @@ def teacher_print_all_report_cards():
                     if eot_score is not None
                     else 0
                 )
-    
-                # =================================================
-                # TOTAL SCORE
-                # =================================================
-    
+
+                # TOTAL OUT OF 100
                 total_score = (
                     ai_contribution +
                     eot_contribution
                 )
-    
-                # =================================================
-                # SUBJECT GRADE / DESCRIPTOR
-                # =================================================
-    
-                grade, descriptor = (
-                    get_olevel_grade_details(
-                        total_score
-                    )
-                )
-    
-                # =================================================
-                # SUBJECT IDENTIFIER
-                # =================================================
-    
+                grade, descriptor = get_grade_and_descriptor(total_score)
+
+                # IDENTIFIER OUT OF 3
                 identifier = round(
                     (total_score / 100) * 3,
                     2
                 )
-    
-                marks.append({
-    
-                    'subject':
-                        m['subject'],
-    
-                    'ai1':
-                        m['ai1'],
-    
-                    'ai2':
-                        m['ai2'],
-    
-                    'ai3':
-                        m['ai3'],
-    
-                    'ai_average':
-                        round(
+
+                marks.append(
+                    {
+                        'subject': m['subject'],
+
+                        'ai1': m['ai1'],
+
+                        'ai2': m['ai2'],
+
+                        'ai3': m['ai3'],
+
+                        'ai_average': round(
                             ai_average,
                             2
                         ),
-    
-                    'ai_contribution':
-                        round(
+
+                        'ai_contribution': round(
                             ai_contribution,
                             2
                         ),
-    
-                    'eot_score':
-                        eot_score,
-    
-                    'total_score':
-                        round(
+
+                        'eot_score': eot_score,
+
+                        'total_score': round(
                             total_score,
                             2
                         ),
-    
-                    'grade':
-                        grade,
-    
-                    'identifier':
-                        identifier,
-    
-                    'descriptor':
-                        descriptor,
-    
-                    'teacher_initials':
-                        m['teacher_initials']
-                })
-    
-    
-            # =====================================================
-            # O-LEVEL GENERAL AVERAGE
-            # =====================================================
-    
+
+                        'grade': grade,
+
+                        'identifier': identifier,
+
+                        'descriptor': descriptor,
+
+                        'teacher_initials':
+                            m['teacher_initials']
+                    }
+                )
+
+            # ----------------------------------------------------
+            # GENERAL AVERAGE
+            # ----------------------------------------------------
+
             valid_marks = [
-                m for m in marks
+                m
+                for m in marks
                 if m['total_score'] is not None
                 and float(m['total_score']) > 0
             ]
-    
+
             total_final = sum(
                 float(m['total_score'])
                 for m in valid_marks
             )
-    
+
             count = len(valid_marks)
-    
+
             general_average = (
                 total_final / count
                 if count > 0
                 else 0
             )
-    
-            # =====================================================
-            # O-LEVEL GENERAL IDENTIFIER
-            # =====================================================
-    
+
+            # ----------------------------------------------------
+            # GENERAL IDENTIFIER
+            # ----------------------------------------------------
+
             general_identifier = round(
                 (general_average / 100) * 3,
                 2
             )
-    
-            # =====================================================
-            # O-LEVEL GENERAL GRADE / DESCRIPTOR
-            # =====================================================
-    
-            general_grade, general_descriptor = (
-                get_olevel_grade_details(
-                    general_average
-                )
-            )
-    
-            # =====================================================
+            general_grade, general_descriptor = get_grade_and_descriptor(general_average)
+
+            # ----------------------------------------------------
             # O-LEVEL COMMENTS
-            #
-            # Comments are based on IDENTIFIER.
-            # =====================================================
-    
-            olevel_teacher_comment = (
+            # ----------------------------------------------------
+
+            teacher_comment = (
                 get_olevel_class_teacher_comment(
                     general_identifier
                 )
             )
-    
-            olevel_headteacher_comment = (
+
+            headteacher_comment = (
                 get_olevel_headteacher_comment(
                     general_identifier
                 )
             )
-    
-            # =====================================================
-            # SAVE O-LEVEL REPORT
-            # =====================================================
-    
-            all_reports.append({
-    
-                'student_id':
-                    student_id,
-    
-                'full_name':
-                    full_name,
-    
-                'photo_url':
-                    photo_url,
-    
-                'marks':
-                    marks,
-    
-                'general_average':
-                    round(
-                        general_average,
-                        2
-                    ),
-    
-                'general_identifier':
-                    general_identifier,
-    
-                'avg_out_of_3':
-                    general_identifier,
-    
-                'general_grade':
-                    general_grade,
-    
-                'general_descriptor':
-                    general_descriptor,
-    
-                'teacher_comment':
-                    olevel_teacher_comment,
-    
-                'headteacher_comment':
-                    olevel_headteacher_comment
-            })
-    cur.close()
-    template = (
-        'teacher/print_all_report_cards_alevel.html'
-        if is_alevel
-        else
-        'teacher/print_all_report_cards.html'
-    )
-    return render_template(
-        template,
-        reports=all_reports,
-        class_name=selected_class,
-        term=term,
-        year=year,
-        next_term_begins=
-            next_term_begins,
-        next_term_ends=
-            next_term_ends,
-        stamp_url=stamp_url,
-        school_name=
-            school_name,
-        school_address=
-            school_address,
-        school_phone=
-            school_phone,
-        school_email=
-            school_email,
-        school_logo_url=
-            school_logo_url
 
+            # ----------------------------------------------------
+            # ADD REPORT
+            # ----------------------------------------------------
+
+            reports.append(
+                {
+                    'student_id': student_id,
+                    'full_name': full_name,
+                    'class_name': student_class,
+                    'lin': lin,
+                    'photo_url': photo_url,
+
+                    'is_alevel': False,
+
+                    'marks': marks,
+
+                    'general_average':
+                        round(
+                            general_average,
+                            2
+                        ),
+
+                    'general_grade':
+                        general_grade,
+
+                    'general_descriptor':
+                        general_descriptor,
+
+                    'general_identifier':
+                        general_identifier,
+
+                    'avg_out_of_3':
+                        general_identifier,
+
+                    'teacher_comment':
+                        teacher_comment,
+
+                    'headteacher_comment':
+                        headteacher_comment
+                }
+            )
+
+    # ============================================================
+    # CLOSE DATABASE
+    # ============================================================
+
+    cur.close()
+
+    # ============================================================
+    # CHOOSE PRINT TEMPLATE
+    # ============================================================
+    #
+    # IMPORTANT:
+    #
+    # The class being printed is either A-Level OR O-Level.
+    # Therefore we choose the correct template here.
+    #
+    # This prevents A-Level students from being sent to
+    # the O-Level print template.
+    # ============================================================
+
+    class_upper = str(
+        class_name or ''
+    ).strip().upper()
+
+    normalized_class = (
+        class_upper
+        .replace('.', '')
+        .replace(' ', '')
+        .replace('-', '')
+        .replace("'", '')
+        .replace('"', '')
+    )
+
+    is_alevel_class = (
+        normalized_class.startswith('S5')
+        or
+        normalized_class.startswith('S6')
+        or
+        normalized_class in [
+            'ALEVEL',
+            'ADVANCEDLEVEL',
+            'ADVANCEDLEVELS'
+        ]
+    )
+
+    # ============================================================
+    # A-LEVEL PRINT TEMPLATE
+    # ============================================================
+
+    if is_alevel_class:
+
+        return render_template(
+            'teacher/print_all_report_cards_alevel.html',
+
+            reports=reports,
+
+            class_name=class_name,
+
+            term=term,
+
+            year=year,
+
+            school_name=school_name,
+            school_address=school_address,
+            school_phone=school_phone,
+            school_email=school_email,
+            school_logo_url=school_logo_url,
+
+            next_term_begins=next_term_begins,
+            next_term_ends=next_term_ends,
+
+            stamp_url=stamp_url
+        )
+
+    # ============================================================
+    # O-LEVEL PRINT TEMPLATE
+    # ============================================================
+
+    return render_template(
+        'teacher/print_all_report_cards.html',
+
+        reports=reports,
+
+        class_name=class_name,
+
+        term=term,
+
+        year=year,
+
+        school_name=school_name,
+        school_address=school_address,
+        school_phone=school_phone,
+        school_email=school_email,
+        school_logo_url=school_logo_url,
+
+        next_term_begins=next_term_begins,
+        next_term_ends=next_term_ends,
+
+        stamp_url=stamp_url
+    )
+
+@app.route('/dos/student_id/<student_id>')
+def student_id_card(student_id):
+
+    if not check_permission(['dos', 'admin', 'headteacher']):
+        abort(403)
+
+    # ================= STUDENT =================
+    cur = get_db().cursor()
+
+    cur.execute(
+        """
+        SELECT
+            student_id,
+            full_name,
+            class,
+            sex,
+            photo_path,
+            student_signature,
+            qr_token
+        FROM students
+        WHERE student_id=%s
+        """,
+        (student_id,)
+    )
+
+    student = cur.fetchone()
+
+    if not student:
+        cur.close()
+        flash('Student not found.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    # ================= SCHOOL SETTINGS =================
+    cur.execute(
+        """
+        SELECT
+            school_name,
+            school_address,
+            school_phone,
+            school_email,
+            school_website,
+            logo_url,
+            headteacher_stamp
+        FROM school_settings
+        WHERE id=1
+        """
+    )
+
+    settings = cur.fetchone()
+    cur.close()
+
+    if not settings:
+        flash('School settings have not been configured.', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    # ================= DATES =================
+    issue_date = date.today()
+
+    class_name = (student['class'] or '').strip().upper()
+
+    # Remove spaces, dots and hyphens.
+    normalized_class = re.sub(
+        r'[^A-Z0-9]',
+        '',
+        class_name
+    )
+
+    # S5/S6 = A-Level
+    a_level_classes = {
+        'S5',
+        'S6',
+        'SENIOR5',
+        'SENIOR6'
+    }
+
+    if normalized_class in a_level_classes:
+        validity_years = 2
+    else:
+        validity_years = 4
+
+    expiry_date = (
+        issue_date
+        + relativedelta(years=validity_years)
+        - relativedelta(days=1)
+    )
+
+    # ================= QR CODE =================
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=2
+    )
+
+    # IMPORTANT:
+    # The QR contains ONLY the existing qr_token.
+    qr.add_data(student['qr_token'])
+    qr.make(fit=True)
+
+    qr_image = qr.make_image(
+        fill_color="black",
+        back_color="white"
+    )
+
+    qr_buffer = io.BytesIO()
+    qr_image.save(
+        qr_buffer,
+        format='PNG'
+    )
+
+    qr_base64 = base64.b64encode(
+        qr_buffer.getvalue()
+    ).decode('utf-8')
+
+    # ================= RENDER CARD =================
+    return render_template(
+        'dos/student_id_card.html',
+        student=student,
+        settings=settings,
+        issue_date=issue_date,
+        expiry_date=expiry_date,
+        qr_base64=qr_base64
+    )
+
+@app.route('/dos/student-ids/print-backs')
+def print_student_id_backs():
+
+    if not check_permission(['dos', 'admin', 'headteacher']):
+        abort(403)
+
+    cur = get_db().cursor()
+
+    # ============================================================
+    # GET ALL STUDENTS
+    # ============================================================
+
+    cur.execute("""
+        SELECT
+            student_id,
+            full_name,
+            class,
+            sex,
+            qr_token
+        FROM students
+        ORDER BY class, full_name
+    """)
+
+    students = cur.fetchall()
+
+
+    # ============================================================
+    # SCHOOL SETTINGS
+    # ============================================================
+
+    cur.execute("""
+        SELECT
+            school_name,
+            school_address,
+            school_phone,
+            school_email,
+            school_website,
+            logo_url,
+            headteacher_stamp
+        FROM school_settings
+        WHERE id=1
+    """)
+
+    settings = cur.fetchone()
+
+    cur.close()
+
+
+    # ============================================================
+    # CHECK SETTINGS
+    # ============================================================
+
+    if not settings:
+
+        flash(
+            'School settings have not been configured.',
+            'danger'
+        )
+
+        return redirect(
+            request.referrer or url_for('dashboard')
+        )
+
+
+    # ============================================================
+    # CHECK STUDENTS
+    # ============================================================
+
+    if not students:
+
+        flash(
+            'No students were found.',
+            'danger'
+        )
+
+        return redirect(
+            request.referrer or url_for('dashboard')
+        )
+
+
+    # ============================================================
+    # GENERATE QR IMAGE FOR EACH STUDENT
+    #
+    # IMPORTANT:
+    # We use the EXISTING qr_token.
+    #
+    # We do NOT create a new token.
+    # ============================================================
+
+    prepared_students = []
+
+
+    for student in students:
+
+        qr_base64 = None
+
+
+        if student['qr_token']:
+
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_H,
+                box_size=10,
+                border=2
+            )
+
+            qr.add_data(student['qr_token'])
+
+            qr.make(fit=True)
+
+
+            qr_image = qr.make_image(
+                fill_color="black",
+                back_color="white"
+            )
+
+
+            qr_buffer = io.BytesIO()
+
+
+            qr_image.save(
+                qr_buffer,
+                format='PNG'
+            )
+
+
+            qr_base64 = base64.b64encode(
+                qr_buffer.getvalue()
+            ).decode('utf-8')
+
+
+        # Add QR image to student record
+        student['qr_base64'] = qr_base64
+
+
+        prepared_students.append(student)
+
+
+    # ============================================================
+    # DIVIDE STUDENTS INTO A4 PAGES
+    #
+    # 10 ID BACKS PER A4
+    # 2 COLUMNS × 5 ROWS
+    # ============================================================
+
+    students_per_page = 10
+
+    pages = []
+
+
+    for i in range(
+        0,
+        len(prepared_students),
+        students_per_page
+    ):
+
+        pages.append(
+            prepared_students[
+                i:i + students_per_page
+            ]
+        )
+
+
+    # ============================================================
+    # RENDER
+    # ============================================================
+
+    return render_template(
+        'dos/student_id_backs.html',
+
+        students=prepared_students,
+
+        pages=pages,
+
+        settings=settings,
+
+        total_students=len(prepared_students)
+    )
+
+@app.route('/attendance/dashboard')
+def attendance_dashboard():
+
+    if not session.get('user_id'):
+        return redirect(url_for('login'))
+
+    user_id = session.get('user_id')
+
+    # Get the classes/streams assigned to this teacher
+    assignments = get_user_assignments(user_id)
+
+    if not assignments:
+        return render_template(
+            'attendance/dashboard.html',
+            students=[],
+            assignments=[],
+            selected_class='',
+            summary={
+                'total': 0,
+                'present': 0,
+                'absent': 0,
+                'left': 0
+            }
+        )
+
+    # Get selected class from URL
+    selected_class = request.args.get('class', '').strip().upper()
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    today = date.today()
+
+    # Get students
+    cur.execute("""
+        SELECT
+            s.student_id,
+            s.full_name,
+            s.class,
+            s.sex,
+            a.clock_in,
+            a.clock_out,
+            a.status
+        FROM students s
+        LEFT JOIN attendance a
+            ON a.student_id = s.student_id
+            AND a.date = %s
+        WHERE s.admission_status = 'approved'
+        ORDER BY s.class, s.full_name
+    """, (today,))
+
+    all_students = cur.fetchall()
+
+    cur.close()
+
+    # Keep only classes the teacher is allowed to see
+    students = []
+
+    for student in all_students:
+
+        if selected_class:
+            if student['class'].strip().upper() != selected_class:
+                continue
+
+        if teacher_has_class_access(
+            user_id,
+            student['class']
+        ):
+            students.append(student)
+
+    # Calculate summary
+    total = len(students)
+
+    present = sum(
+        1 for s in students
+        if s['clock_in'] and not s['clock_out']
+    )
+
+    left = sum(
+        1 for s in students
+        if s['clock_out']
+    )
+
+    absent = sum(
+        1 for s in students
+        if not s['clock_in']
+    )
+
+    summary = {
+        'total': total,
+        'present': present,
+        'absent': absent,
+        'left': left
+    }
+        # =================================================
+    # CLOCK-IN SUMMARY BY CLASS / STREAM AND SEX
+    # =================================================
+
+    stream_summary = {}
+
+    for student in students:
+
+        # Only count students who actually clocked in
+        if not student['clock_in']:
+            continue
+
+        class_name = (
+            student['class'] or ''
+        ).strip().upper()
+
+        sex = (
+            student['sex'] or ''
+        ).strip().lower()
+
+        if class_name not in stream_summary:
+
+            stream_summary[class_name] = {
+                'boys': 0,
+                'girls': 0,
+                'total': 0
+            }
+
+        if sex in ['male', 'm', 'boy', 'boys']:
+
+            stream_summary[class_name]['boys'] += 1
+
+        elif sex in ['female', 'f', 'girl', 'girls']:
+
+            stream_summary[class_name]['girls'] += 1
+
+        stream_summary[class_name]['total'] += 1
+
+    # Convert dictionary to sorted list
+    stream_summary = [
+        {
+            'class_name': class_name,
+            'boys': data['boys'],
+            'girls': data['girls'],
+            'total': data['total']
+        }
+        for class_name, data in sorted(
+            stream_summary.items()
+        )
+    ]
+    # Build list of classes teacher can access
+    accessible_classes = set()
+
+    for assignment in assignments:
+
+        class_name = (
+            assignment.get('class_name') or ''
+        ).strip().upper()
+
+        if class_name:
+            accessible_classes.add(class_name)
+
+    return render_template(
+        'attendance/dashboard.html',
+        students=students,
+        assignments=assignments,
+        accessible_classes=sorted(accessible_classes),
+        selected_class=selected_class,
+        summary=summary, stream_summary=stream_summary
     )
 # ==================== BURSAR MODULE ====================
 
@@ -10054,37 +13155,116 @@ def bursar_print_payment_prn(request_id):
     )
 @app.route('/bursar/print_receipts')
 def bursar_print_receipts():
+
     if not check_permission(['bursar']):
         abort(403)
 
     receipt_ids = request.args.get('ids', '')
     receipts = []
 
+    db = get_db_dict()
+    cur = db.cursor()
+
+    # =================================================
+    # GET RECEIPTS
+    # =================================================
+
     if receipt_ids:
-        ids = [int(x) for x in receipt_ids.split(',') if x.isdigit()]
+
+        ids = [
+            int(x)
+            for x in receipt_ids.split(',')
+            if x.isdigit()
+        ]
 
         if ids:
-            placeholders = ','.join(['%s'] * len(ids))
 
-            db = get_db_dict()
-            cur = db.cursor()
+            placeholders = ','.join(
+                ['%s'] * len(ids)
+            )
 
             cur.execute(f"""
-                SELECT p.*, s.full_name, s.class
+                SELECT
+                    p.*,
+                    s.full_name,
+                    s.class
                 FROM payments p
-                JOIN students s 
-                ON p.student_id=s.student_id
+                JOIN students s
+                    ON p.student_id = s.student_id
                 WHERE p.id IN ({placeholders})
                 ORDER BY p.payment_date DESC
             """, ids)
 
             receipts = cur.fetchall()
-            cur.close()
+
+    # =================================================
+    # GET SCHOOL SETTINGS
+    # =================================================
+
+    cur.execute("""
+        SELECT
+            school_name,
+            school_address,
+            school_phone,
+            school_email,
+            logo_url,
+            headteacher_stamp
+        FROM school_settings
+        WHERE id = 1
+    """)
+
+    school = cur.fetchone()
+
+    cur.close()
+
+    # =================================================
+    # DEFAULT SETTINGS
+    # =================================================
+
+    if not school:
+        school = {
+            'school_name': 'YOUR SCHOOL NAME',
+            'school_address': '',
+            'school_phone': '',
+            'school_email': '',
+            'logo_url': None,
+            'headteacher_stamp': None
+        }
+
+    # =================================================
+    # SCHOOL LOGO
+    # =================================================
+
+    logo_url = None
+
+    if school.get('logo_url'):
+        logo_url = get_photo_url(
+            school['logo_url']
+        )
+
+    # =================================================
+    # SCHOOL STAMP
+    # =================================================
+
+    stamp_url = None
+
+    if school.get('headteacher_stamp'):
+        stamp_url = get_photo_url(
+            school['headteacher_stamp']
+        )
+
+    # =================================================
+    # RENDER
+    # =================================================
 
     return render_template(
         'bursar/print_receipts.html',
-        receipts=receipts
+        receipts=receipts,
+        school=school,
+        logo_url=logo_url,
+        stamp_url=stamp_url
     )
+
 
 @app.route('/bursar/send_reminder/<student_id>')
 def bursar_send_reminder(student_id):
@@ -10155,75 +13335,339 @@ def bursar_bulk_reminder():
 
 @app.route('/bursar/clearance/<student_id>')
 def bursar_clearance(student_id):
+
     if not check_permission(['bursar']):
         abort(403)
 
     db = get_db_dict()
     cur = db.cursor()
 
+    # ==============================
+    # GET STUDENT
+    # ==============================
+
     cur.execute("""
-        SELECT student_id, full_name, class, parent_phone,
-               fees_balance, fees_total, fees_paid, photo_path
+        SELECT
+            student_id,
+            full_name,
+            class,
+            parent_phone,
+            fees_balance,
+            fees_total,
+            fees_paid,
+            photo_path,
+            admission_date
         FROM students
         WHERE student_id=%s
     """, (student_id,))
 
     student = cur.fetchone()
-    cur.close()
 
     if not student:
-        flash('Student not found', 'danger')
-        return redirect(url_for('bursar_students'))
+        cur.close()
 
-    student['fees_total'] = student.get('fees_total') or 0
-    student['fees_paid'] = student.get('fees_paid') or 0
-    student['fees_balance'] = student.get('fees_balance') or 0
-    student['photo_url'] = get_photo_url(student.get('photo_path'))
+        flash('Student not found', 'danger')
+
+        return redirect(
+            url_for('bursar_students')
+        )
+
+    # ==============================
+    # GET SCHOOL SETTINGS
+    # ==============================
+
+    cur.execute("""
+        SELECT
+            school_name,
+            school_address,
+            school_phone,
+            school_email,
+            logo_url,
+            headteacher_stamp
+        FROM school_settings
+        WHERE id=1
+    """)
+
+    school = cur.fetchone()
+
+    cur.close()
+
+    # ==============================
+    # DEFAULT SETTINGS IF NONE EXIST
+    # ==============================
+
+    if not school:
+        school = {
+            'school_name': 'YOUR SCHOOL NAME',
+            'school_address': '',
+            'school_phone': '',
+            'school_email': '',
+            'logo_url': None,
+            'headteacher_stamp': None
+        }
+
+    # ==============================
+    # FEES
+    # ==============================
+
+    student['fees_total'] = (
+        student.get('fees_total') or 0
+    )
+
+    student['fees_paid'] = (
+        student.get('fees_paid') or 0
+    )
+
+    student['fees_balance'] = (
+        student.get('fees_balance') or 0
+    )
+
+    # ==============================
+    # STUDENT PHOTO
+    # ==============================
+
+    student['photo_url'] = get_photo_url(
+        student.get('photo_path')
+    )
+
+    # ==============================
+    # SCHOOL LOGO
+    # ==============================
+
+    logo_url = None
+
+    if school.get('logo_url'):
+        logo_url = get_photo_url(
+            school['logo_url']
+        )
+
+    # ==============================
+    # SCHOOL STAMP
+    # ==============================
+
+    stamp_url = None
+
+    if school.get('headteacher_stamp'):
+        stamp_url = get_photo_url(
+            school['headteacher_stamp']
+        )
 
     return render_template(
         'bursar/clearance.html',
-        student=student
+        student=student,
+        school=school,
+        school_settings=school,
+        logo_url=logo_url,
+        stamp_url=stamp_url
     )
 
 @app.route('/bursar/bulk_clearance')
 def bursar_bulk_clearance():
+
     if not check_permission(['bursar']):
         abort(403)
 
-    class_filter = request.args.get('class', '')
+    class_filter = request.args.get(
+        'class',
+        ''
+    ).strip()
 
     db = get_db_dict()
     cur = db.cursor()
 
+    # ==============================
+    # GET CLEARED STUDENTS
+    # ==============================
+
     query = """
-        SELECT student_id, full_name, class, parent_phone,
-               fees_balance, fees_total, fees_paid, photo_path
+        SELECT
+            student_id,
+            full_name,
+            class,
+            parent_phone,
+            fees_balance,
+            fees_total,
+            fees_paid,
+            photo_path
         FROM students
-        WHERE fees_balance <= 0
+        WHERE COALESCE(fees_balance, 0) <= 0
     """
 
     params = []
 
     if class_filter:
-        query += " AND class=%s"
+
+        query += """
+            AND class=%s
+        """
+
         params.append(class_filter)
 
+    query += """
+        ORDER BY class, full_name
+    """
+
     cur.execute(query, params)
+
     students = cur.fetchall()
+
+    # ==============================
+    # GET SCHOOL SETTINGS
+    # ==============================
+
+    cur.execute("""
+        SELECT
+            school_name,
+            school_address,
+            school_phone,
+            school_email,
+            logo_url,
+            headteacher_stamp
+        FROM school_settings
+        WHERE id=1
+    """)
+
+    school = cur.fetchone()
+
     cur.close()
 
+    # ==============================
+    # DEFAULT SETTINGS
+    # ==============================
+
+    if not school:
+        school = {
+            'school_name': 'YOUR SCHOOL NAME',
+            'school_address': '',
+            'school_phone': '',
+            'school_email': '',
+            'logo_url': None,
+            'headteacher_stamp': None
+        }
+
+    # ==============================
+    # PREPARE STUDENTS
+    # ==============================
+
     for s in students:
-        s['fees_total'] = s.get('fees_total') or 0
-        s['fees_paid'] = s.get('fees_paid') or 0
-        s['fees_balance'] = s.get('fees_balance') or 0
-        s['photo_url'] = get_photo_url(s.get('photo_path'))
+
+        s['fees_total'] = (
+            s.get('fees_total') or 0
+        )
+
+        s['fees_paid'] = (
+            s.get('fees_paid') or 0
+        )
+
+        s['fees_balance'] = (
+            s.get('fees_balance') or 0
+        )
+
+        s['photo_url'] = get_photo_url(
+            s.get('photo_path')
+        )
+
+    # ==============================
+    # SCHOOL LOGO
+    # ==============================
+
+    logo_url = None
+
+    if school.get('logo_url'):
+        logo_url = get_photo_url(
+            school['logo_url']
+        )
+
+    # ==============================
+    # SCHOOL STAMP
+    # ==============================
+
+    stamp_url = None
+
+    if school.get('headteacher_stamp'):
+        stamp_url = get_photo_url(
+            school['headteacher_stamp']
+        )
 
     return render_template(
         'bursar/bulk_clearance.html',
-        students=students
+        students=students,
+        class_filter=class_filter,
+        school=school,
+        logo_url=logo_url,
+        stamp_url=stamp_url
     )
+@app.route('/bursar/clear_student/<student_id>', methods=['POST'])
+def clear_student(student_id):
+    if not check_permission(['bursar']):
+        abort(403)
 
+    db = get_db_dict()
+    cur = db.cursor()
 
+    # Check student's fees
+    cur.execute("""
+        SELECT fees_balance
+        FROM students
+        WHERE student_id = %s
+    """, (student_id,))
+
+    student = cur.fetchone()
+
+    if not student:
+        cur.close()
+        flash('Student not found.', 'danger')
+        return redirect(url_for('bursar_students'))
+
+    fees_balance = student.get('fees_balance') or 0
+
+    # Student cannot be cleared while owing fees
+    if fees_balance > 0:
+        cur.close()
+        flash(
+            'Student cannot be cleared because there is an outstanding fees balance.',
+            'danger'
+        )
+        return redirect(
+            url_for('bursar_clearance', student_id=student_id)
+        )
+
+    # Get logged-in bursar's user ID
+    user_id = session.get('user_id')
+
+    remarks = request.form.get('remarks', '').strip()
+
+    # Create or update clearance record
+    cur.execute("""
+        INSERT INTO student_clearance (
+            student_id,
+            clearance_status,
+            cleared_by,
+            cleared_at,
+            remarks
+        )
+        VALUES (%s, 'cleared', %s, CURRENT_TIMESTAMP, %s)
+
+        ON CONFLICT (student_id)
+        DO UPDATE SET
+            clearance_status = 'cleared',
+            cleared_by = EXCLUDED.cleared_by,
+            cleared_at = CURRENT_TIMESTAMP,
+            remarks = EXCLUDED.remarks
+    """, (
+        student_id,
+        user_id,
+        remarks
+    ))
+
+    db.commit()
+    cur.close()
+
+    flash('Student cleared successfully.', 'success')
+
+    return redirect(
+        url_for('bursar_clearance', student_id=student_id)
+    )
 @app.route('/bursar/webhook/process')
 def bursar_process_webhooks():
     if not check_permission(['bursar']):
@@ -12369,7 +15813,194 @@ def check_low_stock_alerts():
 
 
     cur.close()
+    
+@app.route('/attendance/scanner')
+def attendance_scanner():
 
+    if not check_permission(['dos', 'headteacher', 'classteacher']):
+        abort(403)
+
+    return render_template('attendance/scanner.html')
+
+@app.route('/attendance/scan', methods=['POST'])
+def attendance_scan():
+    if not check_permission(['dos', 'headteacher', 'classteacher']):
+        abort(403)
+    data = request.get_json()
+    if not data:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid request.'
+        }), 400
+
+    qr_token = data.get('qr_token')
+    mode = data.get('mode')
+    if not qr_token:
+        return jsonify({
+            'success': False,
+            'message': 'QR code was not received.'
+        }), 400
+
+    if mode not in ['clock_in', 'clock_out']:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid attendance mode.'
+        }), 400
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    cur.execute("""
+        SELECT
+            student_id,
+            full_name,
+            class,
+            sex
+        FROM students
+        WHERE qr_token = %s
+    """, (qr_token,))
+
+    student = cur.fetchone()
+    if not student:
+        cur.close()
+        return jsonify({
+            'success': False,
+            'message': 'Student not found.'
+        }), 404
+
+    student_id = student['student_id']
+    today = date.today()
+    now = datetime.now()
+
+    cur.execute("""
+        SELECT *
+        FROM attendance
+        WHERE student_id = %s
+        AND date = %s
+    """, (student_id, today))
+
+    attendance = cur.fetchone()
+
+    if mode == 'clock_in':
+
+        if attendance and attendance['clock_in']:
+
+            cur.close()
+
+            return jsonify({
+                'success': False,
+                'message':
+                    f"{student['full_name']} has already clocked in today."
+            })
+
+        if attendance:
+
+            cur.execute("""
+                UPDATE attendance
+                SET
+                    clock_in = %s,
+                    clock_in_method = %s,
+                    clock_in_device = %s,
+                    status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE student_id = %s
+                AND date = %s
+            """, (
+                now,
+                'qr',
+                'SMARTPHONE',
+                'Present',
+                student_id,
+                today
+            ))
+
+        else:
+
+            cur.execute("""
+                INSERT INTO attendance (
+                    student_id,
+                    date,
+                    status,
+                    clock_in,
+                    clock_in_method,
+                    clock_in_device
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            """, (
+                student_id,
+                today,
+                'Present',
+                now,
+                'qr',
+                'SMARTPHONE'
+            ))
+
+        db.commit()
+        cur.close()
+
+        return jsonify({
+            'success': True,
+            'message':
+                f"✓ {student['full_name']} clocked in at "
+                f"{now.strftime('%H:%M:%S')}"
+        })
+
+
+    if mode == 'clock_out':
+
+        if not attendance or not attendance['clock_in']:
+
+            cur.close()
+
+            return jsonify({
+                'success': False,
+                'message':
+                    f"{student['full_name']} has not clocked in today."
+            })
+
+        if attendance['clock_out']:
+
+            cur.close()
+
+            return jsonify({
+                'success': False,
+                'message':
+                    f"{student['full_name']} has already clocked out today."
+            })
+
+        cur.execute("""
+            UPDATE attendance
+            SET
+                clock_out = %s,
+                clock_out_method = %s,
+                clock_out_device = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE student_id = %s
+            AND date = %s
+        """, (
+            now,
+            'qr',
+            'SMARTPHONE',
+            student_id,
+            today
+        ))
+
+        db.commit()
+        cur.close()
+
+        return jsonify({
+            'success': True,
+            'message':
+                f"✓ {student['full_name']} clocked out at "
+                f"{now.strftime('%H:%M:%S')}"
+        })
 
 
 # ==================== INVENTORY DASHBOARD ====================
@@ -14256,8 +17887,6 @@ def inventory_print_report():
 
 
     else:
-
-
         cur.execute(
             """
             SELECT
@@ -14437,7 +18066,10 @@ def mobile_dashboard():
 
 
     return jsonify({})
-
+    
+@app.route('/health')
+def health():
+    return 'OK', 200
 
 if __name__ == '__main__':
     app.run(debug=True)
