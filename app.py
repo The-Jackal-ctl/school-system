@@ -4551,7 +4551,7 @@ def save_manual_marks():
                     eot,
                     final_mark,
                     grade,
-                    aggregate
+                    aggregate,
                     teacher_initials,
                     term,
                     year
