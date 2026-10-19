@@ -5269,456 +5269,401 @@ def teacher_upload_pupils():
     if not check_permission(['classteacher']):
         abort(403)
 
-    if request.method == 'POST':
+    if request.method == 'GET':
+        return render_template('teacher/upload_pupils.html')
 
-        file = request.files.get('excel_file')
+    import csv
+    import io
+    import re
+    from openpyxl import load_workbook
 
-        if not file or not file.filename:
+    file = request.files.get('excel_file')
 
+    if not file or not file.filename:
+        flash('Please upload an Excel or CSV file.', 'danger')
+        return redirect(url_for('teacher_upload_pupils'))
+
+    filename = file.filename.lower()
+
+    if not filename.endswith(('.xlsx', '.xls', '.csv')):
+        flash(
+            'Unsupported file format. Upload .xlsx or .csv.',
+            'danger'
+        )
+        return redirect(url_for('teacher_upload_pupils'))
+
+    if filename.endswith('.xls'):
+        flash(
+            'The legacy .xls format is not supported by this uploader. '
+            'Save the file as .xlsx or .csv and upload it again.',
+            'danger'
+        )
+        return redirect(url_for('teacher_upload_pupils'))
+
+    db = None
+    cur = None
+
+    try:
+        db = get_db()
+        cur = db.cursor()
+
+        # -------------------------------------------------
+        # GET AND VALIDATE THE CLASS TEACHER'S ASSIGNED CLASS
+        # -------------------------------------------------
+
+        cur.execute("""
+            SELECT class_name
+            FROM teacher_class_assignments
+            WHERE user_id = %s
+              AND assignment_type = 'classteacher'
+            LIMIT 1
+        """, (session.get('user_id'),))
+
+        assignment = cur.fetchone()
+
+        if not assignment or not assignment.get('class_name'):
             flash(
-                'Please upload an Excel or CSV file.',
+                'You are not assigned to a class. '
+                'Contact the administrator.',
                 'danger'
             )
+            return redirect(url_for('teacher_upload_pupils'))
 
-            return redirect(
-                url_for('teacher_upload_pupils')
+        assigned_class = assignment['class_name'].strip()
+
+        normalized_class = re.sub(
+            r'\s+',
+            ' ',
+            assigned_class
+        ).upper()
+
+        compact_class = re.sub(
+            r'[\s.]',
+            '',
+            normalized_class
+        )
+
+        # Nursery class names
+        nursery_classes = {
+            'BABY',
+            'BABY CLASS',
+            'MIDDLE',
+            'MIDDLE CLASS',
+            'TOP',
+            'TOP CLASS'
+        }
+
+        is_nursery = normalized_class in nursery_classes
+
+        # Primary 1-7, allowing common stream variations:
+        # Primary 1, Primary 1A, P.1, P1A
+        is_primary = bool(
+            re.fullmatch(
+                r'PRIMARY\s*[1-7]\s*[A-Z]*',
+                normalized_class
             )
+            or re.fullmatch(
+                r'P\.?\s*[1-7]\s*[A-Z]*',
+                normalized_class
+            )
+            or re.fullmatch(
+                r'P[1-7][A-Z]*',
+                compact_class
+            )
+        )
 
-        try:
+        if not (is_nursery or is_primary):
+            flash(
+                f'Your assigned class "{assigned_class}" is not '
+                'a recognized Nursery or Primary class. '
+                'Ask the administrator to correct your assignment.',
+                'danger'
+            )
+            return redirect(url_for('teacher_upload_pupils'))
 
-            from openpyxl import load_workbook
-            import csv
-            import io
+        success_count = 0
+        error_count = 0
+        errors = []
 
-            db = get_db()
-            cur = db.cursor()
+        # -------------------------------------------------
+        # HELPER: NORMALIZE HEADERS
+        # -------------------------------------------------
 
-            # =================================================
-            # GET CLASS TEACHER'S ASSIGNED CLASS
-            # =================================================
+        def normalize_header(value):
+            return str(value or '').strip().lower().replace(' ', '_')
+
+        def find_column(headers, accepted_names):
+            for index, header in enumerate(headers):
+                if normalize_header(header) in accepted_names:
+                    return index
+            return None
+
+        # -------------------------------------------------
+        # HELPER: INSERT A PUPIL
+        # -------------------------------------------------
+
+        def insert_pupil(full_name, parent_phone='', residence='', row_label='Row'):
+            nonlocal success_count, error_count
+
+            full_name = str(full_name or '').strip()
+            parent_phone = str(parent_phone or '').strip()
+            residence = str(residence or '').strip()
+
+            if not full_name:
+                error_count += 1
+                errors.append(f'{row_label}: Missing full name.')
+                return
+
+            # Residence may be left blank, but if supplied it must be valid.
+            if residence:
+                residence_normalized = residence.lower()
+
+                if residence_normalized == 'day':
+                    residence = 'Day'
+                elif residence_normalized == 'boarding':
+                    residence = 'Boarding'
+                else:
+                    error_count += 1
+                    errors.append(
+                        f'{row_label}: Invalid residence "{residence}". '
+                        'Use Day or Boarding.'
+                    )
+                    return
+
+            pupil_id = generate_pupil_id()
 
             cur.execute("""
-                SELECT class_name
-                FROM teacher_class_assignments
-                WHERE user_id=%s
-                AND assignment_type='classteacher'
-            """, (session.get('user_id'),))
-
-            result = cur.fetchone()
-
-            if not result:
-
-                cur.close()
-
-                flash(
-                    'You are not assigned as a class teacher.',
-                    'danger'
-                )
-
-                return redirect(
-                    url_for('teacher_upload_pupils')
-                )
-
-            assigned_class = (
-                result['class_name']
-                .strip()
-                .upper()
-            )
-
-            success_count = 0
-            error_count = 0
-            errors = []
-
-
-            # =================================================
-            # INSERT PUPIL
-            # =================================================
-
-            def insert_pupil(
-                full_name,
-                parent_phone,
-                residence=''
-            ):
-
-                nonlocal success_count, error_count
-
-                full_name = (
-                    str(full_name or '')
-                    .strip()
-                )
-
-                parent_phone = (
-                    str(parent_phone or '')
-                    .strip()
-                )
-                residence = (
-                    str(residence or '')
-                    .strip()
-                )
-
-                # ---------------------------------------------
-                # REQUIRED NAME
-                # ---------------------------------------------
-
-                if not full_name:
-
-                    error_count += 1
-
-                    return False
-
-              
-                # ---------------------------------------------
-                # VALIDATE RESIDENCE IF PROVIDED
-                # ---------------------------------------------
-
-                if residence:
-
-                    if residence not in [
-                        'Day',
-                        'Boarding'
-                    ]:
-
-                        error_count += 1
-
-                        errors.append(
-                            f"{full_name}: Invalid residence "
-                            f"'{residence}'"
-                        )
-
-                        return False
-
-                # ---------------------------------------------
-                # GENERATE PUPIL ID
-                # ---------------------------------------------
-
-                pupil_id = generate_pupil_id()
-                # ---------------------------------------------
-                # INSERT
-                # ---------------------------------------------
-
-                cur.execute("""
-                    INSERT INTO pupils
-                    (
-                        pupil_id,
-                        full_name,
-                        class,
-                        parent_phone,
-                        residence,
-                        admission_status,
-                        fees_total,
-                        fees_paid,
-                        fees_balance
-                    )
-                    VALUES
-                    (
-                        %s,
-                        %s,
-                        %s,
-                        %s,%s,
-                        'approved',
-                        0,
-                        0,
-                        0
-                    )
-                """, (
+                INSERT INTO pupils (
                     pupil_id,
                     full_name,
-                    assigned_class,
+                    class,
                     parent_phone,
-                    residence or None,
-                ))
-
-                success_count += 1
-
-                return True
-
-            # =================================================
-            # EXCEL UPLOAD
-            # =================================================
-
-            if file.filename.lower().endswith(
-                ('.xlsx', '.xls')
-            ):
-
-                wb = load_workbook(
-                    file,
-                    data_only=True
+                    residence,
+                    admission_status,
+                    fees_total,
+                    fees_paid,
+                    fees_balance
                 )
+                VALUES (
+                    %s, %s, %s, %s, %s,
+                    'approved',
+                    0, 0, 0
+                )
+            """, (
+                pupil_id,
+                full_name,
+                assigned_class,
+                parent_phone or None,
+                residence or None
+            ))
 
-                sheet = wb.active
+            success_count += 1
+
+        # -------------------------------------------------
+        # READ EXCEL WORKBOOK
+        # -------------------------------------------------
+
+        if filename.endswith('.xlsx'):
+            workbook = load_workbook(
+                file,
+                read_only=True,
+                data_only=True
+            )
+
+            try:
+                sheet = workbook.active
+
+                if sheet.max_row < 1:
+                    flash('The uploaded Excel file is empty.', 'danger')
+                    return redirect(url_for('teacher_upload_pupils'))
 
                 headers = [
-                    str(cell.value).strip().lower()
-                    if cell.value
-                    else ''
-                    for cell in sheet[1]
+                    normalize_header(cell)
+                    for cell in next(
+                        sheet.iter_rows(
+                            min_row=1,
+                            max_row=1,
+                            values_only=True
+                        )
+                    )
                 ]
 
-                full_name_col = None
-                parent_phone_col = None
-                residence_col = None
+                full_name_col = find_column(
+                    headers,
+                    {'full_name', 'name', 'pupil_name'}
+                )
 
-                for idx, h in enumerate(headers):
+                phone_col = find_column(
+                    headers,
+                    {'parent_phone', 'phone', 'parent_contact'}
+                )
 
-                    if h in [
-                        'full_name',
-                        'name',
-                        'pupil_name'
-                    ]:
-
-                        full_name_col = idx
-
-                    elif h in [
-                        'parent_phone',
-                        'phone',
-                        'parent_contact'
-                    ]:
-
-                        parent_phone_col = idx
-
-                    elif h in [
-                        'residence',
-                        'boarding_status',
-                        'pupil_residence'
-                    ]:
-
-                        residence_col = idx
-
-                # ---------------------------------------------
-                # DEFAULT EXISTING COLUMNS
-                # ---------------------------------------------
+                residence_col = find_column(
+                    headers,
+                    {'residence', 'boarding_status', 'pupil_residence'}
+                )
 
                 if full_name_col is None:
-                    full_name_col = 0
+                    raise ValueError(
+                        'The Excel file must contain a full_name column.'
+                    )
 
-                if parent_phone_col is None:
-                    parent_phone_col = 1
-
-                # ---------------------------------------------
-                # PROCESS ROWS
-                # ---------------------------------------------
-
-                for row_idx in range(
-                    2,
-                    sheet.max_row + 1
-                ):
-
-                    full_name = str(
-                        sheet.cell(
-                            row=row_idx,
-                            column=full_name_col + 1
-                        ).value or ''
-                    ).strip()
-
-                    parent_phone = str(
-                        sheet.cell(
-                            row=row_idx,
-                            column=parent_phone_col + 1
-                        ).value or ''
-                    ).strip()
-                    
-                    residence = ''
-
-                    if residence_col is not None:
-
-                        residence = str(
-                            sheet.cell(
-                                row=row_idx,
-                                column=residence_col + 1
-                            ).value or ''
-                        ).strip()
-
-                    if not insert_pupil(
-                        full_name,
-                        parent_phone,
-                        residence
-                    ):
-
-                        if full_name and not errors:
-
-                            errors.append(
-                                f"Row {row_idx}: "
-                                f"Pupil could not be uploaded."
-                            )
-
-            # =================================================
-            # CSV UPLOAD
-            # =================================================
-
-            elif file.filename.lower().endswith('.csv'):
-
-                content = file.read().decode(
-                    'utf-8-sig'
-                )
-
-                csv_reader = csv.reader(
-                    io.StringIO(content)
-                )
-
-                headers = next(
-                    csv_reader,
-                    []
-                )
-
-                headers = [
-                    str(h).strip().lower()
-                    for h in headers
-                ]
-
-                full_name_col = None
-                parent_phone_col = None
-                residence_col = None
-
-                for idx, h in enumerate(headers):
-
-                    if h in [
-                        'full_name',
-                        'name',
-                        'pupil_name'
-                    ]:
-
-                        full_name_col = idx
-
-                    elif h in [
-                        'parent_phone',
-                        'phone',
-                        'parent_contact'
-                    ]:
-
-                        parent_phone_col = idx
-
-                    elif h in [
-                        'residence',
-                        'boarding_status',
-                        'pupil_residence'
-                    ]:
-
-                        residence_col = idx
-
-                if full_name_col is None:
-                    full_name_col = 0
-
-                if parent_phone_col is None:
-                    parent_phone_col = 1
-
-                # ---------------------------------------------
-                # PROCESS CSV ROWS
-                # ---------------------------------------------
-
-                for row_idx, row in enumerate(
-                    csv_reader,
+                for row_number, row in enumerate(
+                    sheet.iter_rows(min_row=2, values_only=True),
                     start=2
                 ):
-
                     full_name = (
-                        row[full_name_col].strip()
+                        row[full_name_col]
                         if full_name_col < len(row)
                         else ''
                     )
 
                     parent_phone = (
-                        row[parent_phone_col].strip()
-                        if parent_phone_col < len(row)
+                        row[phone_col]
+                        if phone_col is not None and phone_col < len(row)
                         else ''
                     )
 
-                    residence = ''
-
-                    if (
-                        residence_col is not None
+                    residence = (
+                        row[residence_col]
+                        if residence_col is not None
                         and residence_col < len(row)
-                    ):
+                        else ''
+                    )
 
-                        residence = (
-                            row[residence_col]
-                            .strip()
+                    try:
+                        insert_pupil(
+                            full_name,
+                            parent_phone,
+                            residence,
+                            f'Row {row_number}'
                         )
+                    except Exception as row_error:
+                        error_count += 1
+                        errors.append(
+                            f'Row {row_number}: {str(row_error)}'
+                        )
+                        db.rollback()
 
-                    if not insert_pupil(
+                        # Reopen transaction state for subsequent rows.
+                        # PostgreSQL requires rollback after a failed statement.
+                        cur.close()
+                        cur = db.cursor()
+
+            finally:
+                workbook.close()
+
+        # -------------------------------------------------
+        # READ CSV FILE
+        # -------------------------------------------------
+
+        else:
+            content = file.read().decode('utf-8-sig')
+
+            csv_reader = csv.reader(io.StringIO(content))
+            headers = [
+                normalize_header(value)
+                for value in next(csv_reader, [])
+            ]
+
+            full_name_col = find_column(
+                headers,
+                {'full_name', 'name', 'pupil_name'}
+            )
+
+            phone_col = find_column(
+                headers,
+                {'parent_phone', 'phone', 'parent_contact'}
+            )
+
+            residence_col = find_column(
+                headers,
+                {'residence', 'boarding_status', 'pupil_residence'}
+            )
+
+            if full_name_col is None:
+                raise ValueError(
+                    'The CSV file must contain a full_name column.'
+                )
+
+            for row_number, row in enumerate(csv_reader, start=2):
+                full_name = (
+                    row[full_name_col]
+                    if full_name_col < len(row)
+                    else ''
+                )
+
+                parent_phone = (
+                    row[phone_col]
+                    if phone_col is not None and phone_col < len(row)
+                    else ''
+                )
+
+                residence = (
+                    row[residence_col]
+                    if residence_col is not None
+                    and residence_col < len(row)
+                    else ''
+                )
+
+                try:
+                    insert_pupil(
                         full_name,
                         parent_phone,
-                        residence
-                    ):
+                        residence,
+                        f'Row {row_number}'
+                    )
+                except Exception as row_error:
+                    error_count += 1
+                    errors.append(
+                        f'Row {row_number}: {str(row_error)}'
+                    )
+                    db.rollback()
 
-                        if not full_name:
+                    cur.close()
+                    cur = db.cursor()
 
-                            errors.append(
-                                f"Row {row_idx}: "
-                                f"Missing full name"
-                            )
+        # -------------------------------------------------
+        # SAVE AND REPORT RESULTS
+        # -------------------------------------------------
 
-            # =================================================
-            # UNSUPPORTED FILE
-            # =================================================
+        db.commit()
 
-            else:
-
-                cur.close()
-
-                flash(
-                    'Unsupported file format. '
-                    'Upload .xlsx, .xls, or .csv',
-                    'danger'
+        if success_count > 0:
+            try:
+                add_notification(
+                    'dos',
+                    f'Class teacher uploaded {success_count} pupils '
+                    f'to class {assigned_class}',
+                    '/dos/class_lists'
                 )
+            except Exception:
+                # A notification failure should not undo the pupil upload.
+                pass
 
-                return redirect(
-                    url_for('teacher_upload_pupils')
-                )
-
-            # =================================================
-            # SAVE
-            # =================================================
-
-            db.commit()
-
-            cur.close()
-
-            # =================================================
-            # NOTIFY DOS
-            # =================================================
-
-            add_notification(
-                'dos',
-                f'Class teacher uploaded '
-                f'{success_count} pupils to '
-                f'class {assigned_class}',
-                '/dos/class_lists'
-            )
-
-            # =================================================
-            # RESULT
-            # =================================================
-
-            flash(
-                f'Uploaded {success_count} pupils '
-                f'to class {assigned_class}. '
-                f'Errors: {error_count}',
-                'success'
-                if success_count > 0
-                else 'danger'
-            )
-
-            for error in errors[:5]:
-
-                flash(
-                    error,
-                    'warning'
-                )
-
-        except Exception as e:
-
-            flash(
-                f'Error: {str(e)}',
-                'danger'
-            )
-
-        return redirect(
-            url_for('teacher_pupils')
+        flash(
+            f'Uploaded {success_count} pupils to class '
+            f'{assigned_class}. Errors: {error_count}.',
+            'success' if success_count > 0 else 'danger'
         )
 
-    return render_template(
-        'teacher/upload_pupils.html'
-    )
+        for error in errors[:10]:
+            flash(error, 'warning')
+
+    except Exception as e:
+        if db:
+            db.rollback()
+
+        flash(f'Upload failed: {str(e)}', 'danger')
+
+    finally:
+        if cur:
+            cur.close()
+        if db:
+            db.close()
+
+    return redirect(url_for('teacher_pupils'))
+
 @app.route('/teacher/print_all_report_cards')
 def print_all_report_cards():
 
