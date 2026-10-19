@@ -310,9 +310,9 @@ def init_db():
         )
     """)
     
-    # ==================== A-LEVEL GRADING ====================
+  
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS alevel_grading (
+        CREATE TABLE IF NOT EXISTS grading (
             id SERIAL PRIMARY KEY,
             min_score NUMERIC(5,2),
             max_score NUMERIC(5,2),
