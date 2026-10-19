@@ -1,0 +1,308 @@
+
+{% extends "base.html" %}
+
+{% block title %}Pupil Fee Classification{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <div class="card shadow mb-3">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <span>
+                <i class="fas fa-users"></i>
+                <strong>Pupil Fee Classification</strong>
+            </span>
+
+            <a href="{{ url_for('bursar_pupils') }}"
+               class="btn btn-light btn-sm">
+                <i class="fas fa-arrow-left"></i> Pupil List
+            </a>
+        </div>
+
+        <div class="card-body">
+            <form method="GET"
+                  action="{{ url_for('bursar_pupil_classification') }}">
+
+                <div class="row">
+
+                    <div class="col-md-3 mb-2">
+                        <label class="form-label">Search Pupil</label>
+                        <input type="text"
+                               name="search"
+                               class="form-control"
+                               value="{{ search or '' }}"
+                               placeholder="Pupil ID or full name">
+                    </div>
+
+                    <div class="col-md-3 mb-2">
+                        <label class="form-label">Class</label>
+                        <select name="class" class="form-select">
+                            <option value="">All Classes</option>
+
+                            {% for c in classes %}
+                            <option value="{{ c }}"
+                                {% if class_filter == c %}selected{% endif %}>
+                                {{ c }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2 mb-2">
+                        <label class="form-label">Term</label>
+                        <select name="term" class="form-select">
+                            {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
+                            <option value="{{ t }}"
+                                {% if term == t %}selected{% endif %}>
+                                {{ t }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2 mb-2">
+                        <label class="form-label">Year</label>
+                        <input type="number"
+                               name="year"
+                               class="form-control"
+                               value="{{ year }}"
+                               required>
+                    </div>
+
+                    <div class="col-md-2 mb-2 d-flex align-items-end">
+                        <button type="submit"
+                                class="btn btn-primary me-2">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+
+                        <a href="{{ url_for(
+                            'bursar_pupil_classification',
+                            year=year,
+                            term=term
+                        ) }}"
+                           class="btn btn-secondary">
+                            Reset
+                        </a>
+                    </div>
+
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow">
+        <div class="card-header bg-dark text-white">
+            <i class="fas fa-money-check-alt"></i>
+            Pupil Fee Classification
+        </div>
+
+        <div class="card-body">
+
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                Select each pupil's residence and save to apply the
+                matching fee structure for {{ term }}, {{ year }}.
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover table-striped align-middle">
+
+                    <thead class="table-dark">
+                        <tr class="text-center">
+                            <th>Pupil ID</th>
+                            <th>Full Name</th>
+                            <th>Class</th>
+                            <th>Residence</th>
+                            <th>Fee Structure</th>
+                            <th>Total Fees (UGX)</th>
+                            <th>Paid (UGX)</th>
+                            <th>Balance (UGX)</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                    {% for s in pupils %}
+
+                        {% set pupil_class = s['class'] or '' %}
+                        {% set current_total = s.fees_total|default(0, true)|float %}
+                        {% set current_paid = s.fees_paid|default(0, true)|float %}
+                        {% set current_balance = s.fees_balance|default(0, true)|float %}
+
+                        <tr>
+                            <td class="text-center">
+                                <strong>{{ s.pupil_id }}</strong>
+                            </td>
+
+                            <td>{{ s.full_name }}</td>
+
+                            <td class="text-center">
+                                <strong>{{ pupil_class }}</strong>
+                            </td>
+
+                            <td>
+                                <form method="POST"
+                                      action="{{ url_for(
+                                          'bursar_pupil_classification_update'
+                                      ) }}"
+                                      class="classification-form">
+
+                                    <input type="hidden"
+                                           name="pupil_id"
+                                           value="{{ s.pupil_id }}">
+
+                                    <input type="hidden"
+                                           name="term"
+                                           value="{{ term }}">
+
+                                    <input type="hidden"
+                                           name="year"
+                                           value="{{ year }}">
+
+                                    <input type="hidden"
+                                           name="class"
+                                           value="{{ pupil_class }}">
+
+                                    <select name="residence"
+                                            class="form-select form-select-sm residence-select"
+                                            required>
+                                        <option value="">Select residence</option>
+
+                                        <option value="Day"
+                                            {% if s.residence == 'Day' %}selected{% endif %}>
+                                            Day
+                                        </option>
+
+                                        <option value="Boarding"
+                                            {% if s.residence == 'Boarding' %}selected{% endif %}>
+                                            Boarding
+                                        </option>
+                                    </select>
+                            </td>
+
+                            <td>
+                                <select class="form-select form-select-sm fee-structure"
+                                        disabled>
+                                    <option value="">Select residence first</option>
+
+                                    {% for f in fee_structures %}
+                                        {% if f.level|upper|replace('.', '')|replace(' ', '') == pupil_class|upper|replace('.', '')|replace(' ', '')
+                                            or f.level|upper == pupil_class|upper
+                                            or (f.level|upper in ['BABY CLASS', 'MIDDLE CLASS', 'TOP CLASS']
+                                                and f.level|upper|replace(' CLASS', '') == pupil_class|upper)
+                                            or (f.level|upper == 'NURSERY' and pupil_class|upper in ['BABY', 'MIDDLE', 'TOP']) %}
+
+                                        <option value="{{ f.amount }}"
+                                                data-level="{{ f.level }}"
+                                                data-residence="{{ f.residence }}">
+                                            {{ f.level }} — {{ f.residence }} —
+                                            UGX {{ "{:,.0f}".format(f.amount|float) }}
+                                        </option>
+
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <small class="fee-message text-muted"></small>
+                            </td>
+
+                            <td class="text-end">
+                                <span class="fee-total">
+                                    {{ "{:,.0f}".format(current_total) }}
+                                </span>
+                            </td>
+
+                            <td class="text-end text-success">
+                                {{ "{:,.0f}".format(current_paid) }}
+                            </td>
+
+                            <td class="text-end">
+                                <span class="{% if current_balance > 0 %}text-danger{% else %}text-success{% endif %} fw-bold">
+                                    {{ "{:,.0f}".format(current_balance) }}
+                                </span>
+                            </td>
+
+                            <td class="text-center">
+                                <button type="submit"
+                                        class="btn btn-success btn-sm">
+                                    <i class="fas fa-save"></i> Save
+                                </button>
+                                </form>
+                            </td>
+                        </tr>
+
+                    {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">
+                                <i class="fas fa-users-slash fa-2x mb-2 d-block"></i>
+                                No Nursery or Primary pupils found.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+
+                </table>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    document.querySelectorAll('.classification-form').forEach(function (form) {
+
+        const residenceSelect = form.querySelector('.residence-select');
+        const feeSelect = form.closest('tr').querySelector('.fee-structure');
+        const feeTotal = form.closest('tr').querySelector('.fee-total');
+        const feeMessage = form.closest('tr').querySelector('.fee-message');
+
+        function updateFeeStructure() {
+            const residence = residenceSelect.value;
+            let matchFound = false;
+
+            Array.from(feeSelect.options).forEach(function (option, index) {
+                if (index === 0) {
+                    option.hidden = false;
+                    return;
+                }
+
+                const matches = option.dataset.residence === residence;
+                option.hidden = !matches;
+
+                if (matches && !matchFound) {
+                    option.selected = true;
+                    matchFound = true;
+                }
+            });
+
+            if (matchFound) {
+                const selectedOption = feeSelect.options[feeSelect.selectedIndex];
+                const amount = parseFloat(selectedOption.value) || 0;
+
+                feeTotal.textContent = amount.toLocaleString('en-US', {
+                    maximumFractionDigits: 0
+                });
+
+                feeMessage.textContent = 'Matching fee structure found.';
+                feeMessage.className = 'fee-message text-success';
+            } else {
+                feeSelect.selectedIndex = 0;
+
+                feeMessage.textContent = residence
+                    ? 'No fee structure found for this class and residence.'
+                    : 'Select a residence to check fees.';
+
+                feeMessage.className = 'fee-message text-danger';
+            }
+        }
+
+        residenceSelect.addEventListener('change', updateFeeStructure);
+        updateFeeStructure();
+    });
+});
+</script>
+
+{% endblock %}
