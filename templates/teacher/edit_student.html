@@ -1,238 +1,300 @@
+
 {% extends "base.html" %}
-{% block title %}Edit Student - {{ student.full_name }}{% endblock %}
+
+{% block title %}Edit Pupil - {{ pupil.full_name }}{% endblock %}
 
 {% block content %}
-<div class="card shadow">
-    <div class="card-header bg-primary text-white">
-        <i class="fas fa-user-edit"></i> Edit Student Record
-    </div>
-    <div class="card-body">
-        <form method="POST" enctype="multipart/form-data">
-            <div class="row">
-                <div class="col-md-4 text-center">
-                    <div class="mb-3">
-                        <img src="{{ url_for('uploaded_file', filename=student.photo_path) if student.photo_path else url_for('static', filename='images/default_avatar.png') }}" 
-                             class="rounded-circle mb-2" style="width: 150px; height: 150px; object-fit: cover; border: 3px solid #1a237e;">
-                        <input type="file" name="photo" class="form-control mt-2" accept="image/*">
-                        <small class="text-muted">Leave empty to keep current photo</small>
-                    </div>
-                </div>
-                <div class="col-md-8">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label>Student ID</label>
-                            <input type="text" class="form-control" value="{{ student.student_id }}" disabled>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Full Name *</label>
-                            <input type="text" name="full_name" class="form-control" value="{{ student.full_name }}" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Class</label>
-                            <input type="text" name="class" class="form-control" value="{{ student.class }}" required>
-                        </div>
-                       <div class="col-md-6 mb-3">
-                            <label for="programme" class="form-label">
-                                Programme
+<div class="container-fluid">
+    <div class="card shadow">
+
+        <div class="card-header bg-primary text-white">
+            <i class="fas fa-user-edit"></i>
+            Edit Pupil Record — Nursery and Primary
+        </div>
+
+        <div class="card-body">
+            <form method="POST"
+                  enctype="multipart/form-data">
+
+                <div class="row">
+
+                    <!-- Pupil photo -->
+                    <div class="col-md-4 text-center">
+                        <div class="mb-3">
+
+                            {% if pupil.photo_path %}
+                                <img
+                                    src="{{ url_for('uploaded_file', filename=pupil.photo_path) }}"
+                                    alt="Pupil photo"
+                                    class="rounded-circle mb-2"
+                                    style="width:150px;height:150px;object-fit:cover;border:3px solid #1a237e;"
+                                >
+                            {% else %}
+                                <img
+                                    src="{{ url_for('static', filename='images/default_avatar.png') }}"
+                                    alt="Default pupil photo"
+                                    class="rounded-circle mb-2"
+                                    style="width:150px;height:150px;object-fit:cover;border:3px solid #1a237e;"
+                                >
+                            {% endif %}
+
+                            <label for="photo" class="form-label d-block">
+                                Change Photo
                             </label>
-                        
-                            <select
-                                name="programme"
-                                id="programme"
-                                class="form-select"
-                                required
+
+                            <input
+                                type="file"
+                                name="photo"
+                                id="photo"
+                                class="form-control"
+                                accept=".jpg,.jpeg,.png,.gif,.webp"
                             >
-                                <option value="">-- Select Programme --</option>
-                        
-                                <option
-                                    value="USE"
-                                    {% if student.programme == 'USE' %}selected{% endif %}
-                                >
-                                    USE
-                                </option>
-                        
-                                <option
-                                    value="Non-USE"
-                                    {% if student.programme == 'Non-USE' %}selected{% endif %}
-                                >
-                                    Non-USE
-                                </option>
-                        
-                                <option
-                                    value="UPOLET"
-                                    {% if student.programme == 'UPOLET' %}selected{% endif %}
-                                >
-                                    UPOLET
-                                </option>
-                        
-                                <option
-                                    value="Non-UPOLET"
-                                    {% if student.programme == 'Non-UPOLET' %}selected{% endif %}
-                                >
-                                    Non-UPOLET
-                                </option>
-                            </select>
-                        </div>
-                        
-                        <!-- Residence -->
-                        <div class="col-md-6 mb-3">
-                            <label for="residence" class="form-label">
-                                Residence
-                            </label>
-                        
-                            <select
-                                name="residence"
-                                id="residence"
-                                class="form-select"
-                                required
-                            >
-                                <option value="">-- Select Residence --</option>
-                        
-                                <option
-                                    value="Day"
-                                    {% if student.residence == 'Day' %}selected{% endif %}
-                                >
-                                    Day
-                                </option>
-                        
-                                <option
-                                    value="Boarding"
-                                    {% if student.residence == 'Boarding' %}selected{% endif %}
-                                >
-                                    Boarding
-                                </option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Parent Phone *</label>
-                            <input type="text" name="parent_phone" class="form-control" value="{{ student.parent_phone or '' }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Parent Email</label>
-                            <input type="email" name="parent_email" class="form-control" value="{{ student.parent_email or '' }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Address</label>
-                            <input type="text" name="address" class="form-control" value="{{ student.address or '' }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Admission Date</label>
-                            <input type="date" name="admission_date" class="form-control" value="{{ student.admission_date or '' }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Date of Birth</label>
-                            <input type="date" name="date_of_birth" class="form-control" value="{{ student.date_of_birth or '' }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Sex</label>
-                            <select name="sex" class="form-select">
-                                <option value="">Select</option>
-                                <option value="Male" {% if student.sex == 'Male' %}selected{% endif %}>Male</option>
-                                <option value="Female" {% if student.sex == 'Female' %}selected{% endif %}>Female</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label>Preferred House</label>
-                            <input type="text" name="preferred_house" class="form-control" value="{{ student.preferred_house or '' }}">
-                        </div>
-                        <div class="col-md-12 mb-3">
-                            <label>Disability (if any)</label>
-                            <input type="text" name="disability" class="form-control" value="{{ student.disability or '' }}">
+
+                            <small class="text-muted">
+                                Leave empty to keep the current photo.
+                            </small>
                         </div>
                     </div>
+
+                    <!-- Pupil details -->
+                    <div class="col-md-8">
+                        <div class="row">
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Pupil ID</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    value="{{ pupil.pupil_id }}"
+                                    disabled
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="full_name" class="form-label">
+                                    Full Name *
+                                </label>
+                                <input
+                                    type="text"
+                                    id="full_name"
+                                    name="full_name"
+                                    class="form-control"
+                                    value="{{ pupil.full_name or '' }}"
+                                    required
+                                >
+                            </div>
+
+                            <!-- Nursery and Primary class -->
+                            <div class="col-md-6 mb-3">
+                                <label for="class" class="form-label">
+                                    Class *
+                                </label>
+
+                                {% set current_class = (pupil['class'] or '')|upper|replace('.', '')|replace(' ', '') %}
+
+                                <select
+                                    name="class"
+                                    id="class"
+                                    class="form-select"
+                                    required
+                                >
+                                    <option value="">-- Select Class --</option>
+
+                                    <optgroup label="Nursery">
+                                        <option value="Baby"
+                                            {% if current_class in ['BABY', 'BABYCLASS'] %}selected{% endif %}>
+                                            Baby
+                                        </option>
+
+                                        <option value="Middle"
+                                            {% if current_class in ['MIDDLE', 'MIDDLECLASS'] %}selected{% endif %}>
+                                            Middle
+                                        </option>
+
+                                        <option value="Top"
+                                            {% if current_class in ['TOP', 'TOPCLASS'] %}selected{% endif %}>
+                                            Top
+                                        </option>
+                                    </optgroup>
+
+                                    <optgroup label="Primary">
+                                        {% for n in range(1, 8) %}
+                                            {% set standard = 'PRIMARY' ~ n %}
+                                            {% set short = 'P' ~ n %}
+
+                                            <option value="Primary {{ n }}"
+                                                {% if current_class in [standard, short] %}selected{% endif %}>
+                                                Primary {{ n }}
+                                            </option>
+
+                                            {% for stream in ['A', 'B', 'C', 'D'] %}
+                                                <option value="Primary {{ n }}{{ stream }}"
+                                                    {% if current_class in [standard ~ stream, short ~ stream] %}selected{% endif %}>
+                                                    Primary {{ n }}{{ stream }}
+                                                </option>
+                                            {% endfor %}
+                                        {% endfor %}
+                                    </optgroup>
+                                </select>
+
+                                <small class="text-muted">
+                                    Select Nursery or Primary 1–7, including a stream where applicable.
+                                </small>
+                            </div>
+
+                            <!-- Residence -->
+                            <div class="col-md-6 mb-3">
+                                <label for="residence" class="form-label">
+                                    Residence *
+                                </label>
+
+                                <select
+                                    name="residence"
+                                    id="residence"
+                                    class="form-select"
+                                    required
+                                >
+                                    <option value="">-- Select Residence --</option>
+
+                                    <option value="Day"
+                                        {% if pupil.residence == 'Day' %}selected{% endif %}>
+                                        Day
+                                    </option>
+
+                                    <option value="Boarding"
+                                        {% if pupil.residence == 'Boarding' %}selected{% endif %}>
+                                        Boarding
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="parent_phone" class="form-label">
+                                    Parent Phone
+                                </label>
+                                <input
+                                    type="text"
+                                    id="parent_phone"
+                                    name="parent_phone"
+                                    class="form-control"
+                                    value="{{ pupil.parent_phone or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="parent_email" class="form-label">
+                                    Parent Email
+                                </label>
+                                <input
+                                    type="email"
+                                    id="parent_email"
+                                    name="parent_email"
+                                    class="form-control"
+                                    value="{{ pupil.parent_email or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="address" class="form-label">
+                                    Address / Residence Details
+                                </label>
+                                <input
+                                    type="text"
+                                    id="address"
+                                    name="address"
+                                    class="form-control"
+                                    value="{{ pupil.address or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="admission_date" class="form-label">
+                                    Admission Date
+                                </label>
+                                <input
+                                    type="date"
+                                    id="admission_date"
+                                    name="admission_date"
+                                    class="form-control"
+                                    value="{{ pupil.admission_date.strftime('%Y-%m-%d') if pupil.admission_date and pupil.admission_date.strftime is defined else pupil.admission_date or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="date_of_birth" class="form-label">
+                                    Date of Birth
+                                </label>
+                                <input
+                                    type="date"
+                                    id="date_of_birth"
+                                    name="date_of_birth"
+                                    class="form-control"
+                                    value="{{ pupil.date_of_birth.strftime('%Y-%m-%d') if pupil.date_of_birth and pupil.date_of_birth.strftime is defined else pupil.date_of_birth or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="sex" class="form-label">
+                                    Sex
+                                </label>
+                                <select name="sex" id="sex" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    <option value="Male"
+                                        {% if pupil.sex == 'Male' %}selected{% endif %}>
+                                        Male
+                                    </option>
+                                    <option value="Female"
+                                        {% if pupil.sex == 'Female' %}selected{% endif %}>
+                                        Female
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="preferred_house" class="form-label">
+                                    Preferred House
+                                </label>
+                                <input
+                                    type="text"
+                                    id="preferred_house"
+                                    name="preferred_house"
+                                    class="form-control"
+                                    value="{{ pupil.preferred_house or '' }}"
+                                >
+                            </div>
+
+                            <div class="col-md-12 mb-3">
+                                <label for="disability" class="form-label">
+                                    Disability or Additional Support Needs
+                                </label>
+                                <input
+                                    type="text"
+                                    id="disability"
+                                    name="disability"
+                                    class="form-control"
+                                    value="{{ pupil.disability or '' }}"
+                                >
+                            </div>
+
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="mt-3">
-                <button type="submit" class="btn btn-primary">Update Student</button>
-                <a href="{{ url_for('teacher_students') }}" class="btn btn-secondary">Cancel</a>
-            </div>
-        </form>
+
+                <hr>
+
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Update Pupil
+                    </button>
+
+                    <a href="{{ url_for('teacher_pupils') }}"
+                       class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+
+            </form>
+        </div>
     </div>
 </div>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-
-    const classInput = document.querySelector('[name="class"]');
-    const programmeSelect = document.querySelector('#programme');
-
-    if (!classInput || !programmeSelect) {
-        return;
-    }
-
-    function updateProgrammeOptions() {
-
-        const className = classInput.value
-            .trim()
-            .toUpperCase();
-
-        const currentValue = programmeSelect.value;
-
-        const isOLevel =
-            /^S\.[1-4][A-Z]*$/.test(className);
-
-        const isALevel =
-            /^S\.[56][A-Z]*$/.test(className);
-
-        Array.from(
-            programmeSelect.options
-        ).forEach(function (option) {
-
-            if (option.value === '') {
-                option.hidden = false;
-                return;
-            }
-
-            if (isOLevel) {
-
-                option.hidden = ![
-                    'USE',
-                    'Non-USE'
-                ].includes(option.value);
-
-            } else if (isALevel) {
-
-                option.hidden = ![
-                    'UPOLET',
-                    'Non-UPOLET'
-                ].includes(option.value);
-
-            } else {
-
-                option.hidden = false;
-            }
-        });
-
-        /*
-         * Clear an invalid programme when
-         * the class changes.
-         */
-
-        if (
-            isOLevel &&
-            !['USE', 'Non-USE'].includes(currentValue)
-        ) {
-            programmeSelect.value = '';
-        }
-
-        if (
-            isALevel &&
-            !['UPOLET', 'Non-UPOLET'].includes(currentValue)
-        ) {
-            programmeSelect.value = '';
-        }
-    }
-
-    classInput.addEventListener(
-        'input',
-        updateProgrammeOptions
-    );
-
-    classInput.addEventListener(
-        'change',
-        updateProgrammeOptions
-    );
-
-    updateProgrammeOptions();
-});
-</script>
 {% endblock %}
