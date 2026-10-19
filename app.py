@@ -32,6 +32,26 @@ ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+
+# ==================== PWA OFFLINE ROUTES ====================
+
+@app.route("/offline")
+def offline_page():
+    return render_template("offline.html")
+
+
+@app.route("/service-worker.js")
+def service_worker():
+    response = send_from_directory(
+        app.static_folder,
+        "service-worker.js",
+        mimetype="application/javascript"
+    )
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ==================== POSTGRESQL DATABASE SETUP ====================
 
 import os
