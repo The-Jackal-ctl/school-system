@@ -1,0 +1,243 @@
+
+{% extends "base.html" %}
+
+{% block title %}Pupil Fee Management{% endblock %}
+
+{% block content %}
+
+<div class="card">
+
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <div>
+            <i class="fas fa-money-bill-wave"></i>
+            <strong>Pupil Fee Management</strong>
+        </div>
+
+        <a href="{{ url_for('bursar_pupils') }}"
+           class="btn btn-light btn-sm">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </a>
+    </div>
+
+    <div class="card-body">
+
+        <!-- SEARCH AND FILTERS -->
+        <form method="GET"
+              action="{{ url_for('bursar_pupils') }}"
+              class="row g-2 mb-4">
+
+            <div class="col-md-4">
+                <label class="form-label">Search Pupil</label>
+                <input type="text"
+                       name="search"
+                       value="{{ search or '' }}"
+                       class="form-control"
+                       placeholder="Pupil ID or full name">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Class</label>
+                <select name="class" class="form-select">
+                    <option value="">All Classes</option>
+
+                    {% for cls in classes %}
+                    <option value="{{ cls }}"
+                        {% if class_filter == cls %}selected{% endif %}>
+                        {{ cls }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Residence</label>
+                <select name="residence" class="form-select">
+                    <option value="">All Residences</option>
+
+                    <option value="Day"
+                        {% if residence_filter == 'Day' %}selected{% endif %}>
+                        Day
+                    </option>
+
+                    <option value="Boarding"
+                        {% if residence_filter == 'Boarding' %}selected{% endif %}>
+                        Boarding
+                    </option>
+                </select>
+            </div>
+
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-search"></i> Search
+                </button>
+            </div>
+
+        </form>
+
+        <!-- PUPIL COUNT -->
+        <div class="alert alert-info">
+            <i class="fas fa-users"></i>
+            <strong>{{ pupils|length }}</strong> pupil(s) found.
+        </div>
+
+        <!-- PUPILS TABLE -->
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped table-hover align-middle">
+
+                <thead class="table-dark">
+                    <tr class="text-center">
+                        <th>
+                            <input type="checkbox"
+                                   id="selectAll"
+                                   onclick="toggleAll(this)">
+                        </th>
+                        <th>Pupil ID</th>
+                        <th>Full Name</th>
+                        <th>Class</th>
+                        <th>Residence</th>
+                        <th>Total Fees (UGX)</th>
+                        <th>Paid (UGX)</th>
+                        <th>Balance (UGX)</th>
+                        <th>Parent Phone</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for s in pupils %}
+
+                    {% set total = s.fees_total|default(0, true)|float %}
+                    {% set paid = s.fees_paid|default(0, true)|float %}
+                    {% set balance = s.fees_balance|default(0, true)|float %}
+
+                    <tr>
+                        <td class="text-center">
+                            <input type="checkbox"
+                                   class="pupil-checkbox"
+                                   value="{{ s.pupil_id }}">
+                        </td>
+
+                        <td class="text-center">
+                            <strong>{{ s.pupil_id }}</strong>
+                        </td>
+
+                        <td>
+                            <strong>{{ s.full_name }}</strong>
+                        </td>
+
+                        <td class="text-center">
+                            {{ s['class'] or '-' }}
+                        </td>
+
+                        <td class="text-center">
+                            {% if s.residence == 'Boarding' %}
+                                <span class="badge bg-primary">
+                                    <i class="fas fa-bed"></i> Boarding
+                                </span>
+                            {% elif s.residence == 'Day' %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-sun"></i> Day
+                                </span>
+                            {% else %}
+                                <span class="text-muted">Not set</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-end">
+                            {{ "{:,.2f}".format(total) }}
+                        </td>
+
+                        <td class="text-end text-success">
+                            {{ "{:,.2f}".format(paid) }}
+                        </td>
+
+                        <td class="text-end">
+                            {% if balance > 0 %}
+                                <span class="text-danger fw-bold">
+                                    {{ "{:,.2f}".format(balance) }}
+                                </span>
+                            {% elif balance == 0 %}
+                                <span class="text-success fw-bold">
+                                    0.00
+                                </span>
+                            {% else %}
+                                <span class="text-warning fw-bold">
+                                    {{ "{:,.2f}".format(balance) }}
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            {% if s.parent_phone %}
+                                <a href="tel:{{ s.parent_phone }}"
+                                   class="text-decoration-none">
+                                    <i class="fas fa-phone"></i>
+                                    {{ s.parent_phone }}
+                                </a>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm" role="group">
+
+                                <a href="{{ url_for(
+                                    'bursar_pupil_detail',
+                                    pupil_id=s.pupil_id
+                                ) }}"
+                                   class="btn btn-info"
+                                   title="View fee account / Record payment">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                </a>
+
+                                <a href="{{ url_for(
+                                    'bursar_send_reminder',
+                                    pupil_id=s.pupil_id
+                                ) }}"
+                                   class="btn btn-warning"
+                                   title="Send fee reminder">
+                                    <i class="fas fa-bell"></i>
+                                </a>
+
+                                <a href="{{ url_for(
+                                    'bursar_clearance',
+                                    pupil_id=s.pupil_id
+                                ) }}"
+                                   class="btn btn-success"
+                                   title="Print clearance card">
+                                    <i class="fas fa-print"></i>
+                                </a>
+
+                            </div>
+                        </td>
+                    </tr>
+
+                    {% else %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-5">
+                            <i class="fas fa-folder-open fa-3x mb-3 d-block"></i>
+                            <h5>No pupils found</h5>
+                            <p class="mb-0">
+                                Try changing your search, class, or residence filter.
+                            </p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function toggleAll(source) {
+    document.querySelectorAll('.pupil-checkbox').forEach(function(checkbox) {
+        checkbox.checked = source.checked;
+    });
+}
+</script>
+
+{% endblock %}
