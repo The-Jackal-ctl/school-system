@@ -1,0 +1,317 @@
+
+{% extends "base.html" %}
+
+{% block title %}My Pupils{% endblock %}
+
+{% block content %}
+<style>
+    .student-photo {
+        width: 42px;
+        height: 42px;
+        object-fit: cover;
+        border-radius: 50%;
+    }
+
+    .print-title {
+        display: none;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    @media print {
+        .no-print,
+        .sidebar,
+        .class-selector,
+        .action-column,
+        .btn {
+            display: none !important;
+        }
+
+        .content-area {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+        }
+
+        .card {
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+        }
+
+        .card-header {
+            background: white !important;
+            color: black !important;
+        }
+
+        .student-photo {
+            width: 30px;
+            height: 30px;
+        }
+
+        .print-title {
+            display: block !important;
+        }
+
+        .table th,
+        .table td {
+            padding: 6px !important;
+            font-size: 12px;
+        }
+
+        body {
+            background: white !important;
+        }
+    }
+</style>
+
+<div class="card shadow">
+
+    <!-- Header -->
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">
+            <i class="fas fa-users"></i>
+            My Pupils — {{ selected_class }}
+        </h5>
+
+        <div class="no-print d-flex flex-wrap gap-2">
+            <button type="button"
+                    onclick="window.print()"
+                    class="btn btn-light btn-sm">
+                <i class="fas fa-print"></i> Print Class List
+            </button>
+
+            {% if available_classes %}
+            <a href="{{ url_for('teacher_print_all_report_cards') }}"
+               class="btn btn-light btn-sm">
+                <i class="fas fa-file-pdf"></i> Print All Report Cards
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card-body">
+
+        <!-- Print heading -->
+        <div class="print-title">
+            <h3>Nursery and Primary Pupil List</h3>
+            <p>
+                <strong>Class:</strong> {{ selected_class }}
+                &nbsp; | &nbsp;
+                <strong>Term:</strong> {{ term }}
+                &nbsp; | &nbsp;
+                <strong>Date:</strong>
+                <span id="printDate"></span>
+            </p>
+            <hr>
+        </div>
+
+        <!-- Class and term filters -->
+        <div class="row mb-4 class-selector no-print">
+
+            <div class="col-md-4 mb-2">
+                <label for="classSelect" class="form-label">
+                    Select Class
+                </label>
+
+                <select id="classSelect"
+                        class="form-select"
+                        onchange="updateClass()">
+
+                    {% for cls in available_classes %}
+                    <option value="{{ cls }}"
+                        {% if cls == selected_class %}selected{% endif %}>
+                        {{ cls }}
+                    </option>
+                    {% endfor %}
+
+                </select>
+            </div>
+
+            <div class="col-md-3 mb-2">
+                <label for="termInput" class="form-label">
+                    Term
+                </label>
+
+                <select id="termInput" class="form-select">
+                    {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
+                    <option value="{{ t }}"
+                        {% if t == term %}selected{% endif %}>
+                        {{ t }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-2 mb-2 align-self-end">
+                <button type="button"
+                        onclick="updateTerm()"
+                        class="btn btn-primary">
+                    <i class="fas fa-filter"></i> Update
+                </button>
+            </div>
+
+        </div>
+
+        <!-- Summary -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="border rounded p-3">
+                    <small class="text-muted">Selected Class</small>
+                    <h5 class="mb-0">{{ selected_class }}</h5>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="border rounded p-3">
+                    <small class="text-muted">Total Pupils</small>
+                    <h5 class="mb-0">{{ pupils|length }}</h5>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="border rounded p-3">
+                    <small class="text-muted">Term</small>
+                    <h5 class="mb-0">{{ term }}</h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pupil table -->
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered align-middle">
+
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 55px;">No.</th>
+                        <th>Pupil ID</th>
+                        <th>Photo</th>
+                        <th>Full Name</th>
+                        <th>Class</th>
+                        <th>Parent Phone</th>
+                        <th class="action-column no-print">Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for p in pupils %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+
+                        <td>{{ p.pupil_id }}</td>
+
+                        <td class="text-center">
+                            {% if p.photo_url %}
+                            <img src="{{ p.photo_url }}"
+                                 class="student-photo"
+                                 alt="Pupil photo">
+                            {% else %}
+                            <i class="fas fa-user-circle fa-2x text-secondary"></i>
+                            {% endif %}
+                        </td>
+
+                        <td class="fw-semibold">
+                            {{ p.full_name }}
+                        </td>
+
+                        <td>{{ p.class or selected_class }}</td>
+
+                        <td>{{ p.parent_phone or '-' }}</td>
+
+                        <td class="action-column no-print">
+                            <div class="d-flex flex-wrap gap-1">
+
+                                <a href="{{ url_for('teacher_report_card', student_id=p.pupil_id) }}"
+                                   class="btn btn-sm btn-info"
+                                   title="View report card">
+                                    <i class="fas fa-eye"></i>
+                                    Report
+                                </a>
+
+                                {% if is_classteacher %}
+                                <a href="{{ url_for('teacher_edit_student', student_id=p.pupil_id) }}"
+                                   class="btn btn-sm btn-warning"
+                                   title="Edit pupil">
+                                    <i class="fas fa-edit"></i>
+                                    Edit
+                                </a>
+
+                                <form method="POST"
+                                      action="{{ url_for('teacher_remove_student', student_id=p.pupil_id) }}"
+                                      onsubmit="return confirm('Are you sure you want to remove this pupil? This action cannot be undone.');">
+
+                                    <button type="submit"
+                                            class="btn btn-sm btn-danger"
+                                            title="Remove pupil">
+                                        <i class="fas fa-trash-alt"></i>
+                                        Remove
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                            </div>
+                        </td>
+                    </tr>
+
+                    {% else %}
+                    <tr>
+                        <td colspan="7"
+                            class="text-center text-muted py-5">
+                            <i class="fas fa-folder-open fa-3x mb-3 d-block"></i>
+                            <h6>No pupils found</h6>
+                            <p class="mb-0">
+                                There are no pupils registered in
+                                {{ selected_class }}.
+                            </p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function updateClass() {
+    const selectedClass =
+        document.getElementById('classSelect').value;
+
+    const term =
+        document.getElementById('termInput').value;
+
+    const url = new URL(window.location.href);
+
+    url.searchParams.set('class_name', selectedClass);
+    url.searchParams.set('term', term);
+
+    window.location.href = url.toString();
+}
+
+function updateTerm() {
+    const selectedClass =
+        document.getElementById('classSelect').value;
+
+    const term =
+        document.getElementById('termInput').value;
+
+    const url = new URL(window.location.href);
+
+    url.searchParams.set('class_name', selectedClass);
+    url.searchParams.set('term', term);
+
+    window.location.href = url.toString();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const dateElement = document.getElementById('printDate');
+
+    if (dateElement) {
+        dateElement.textContent =
+            new Date().toLocaleDateString();
+    }
+});
+</script>
+
+{% endblock %}
