@@ -6942,7 +6942,6 @@ def bursar_pupil_fee_details(pupil_id):
 
 @app.route('/bursar/fees')
 def bursar_fees():
-
     if not check_permission(['bursar']):
         abort(403)
 
@@ -6954,17 +6953,9 @@ def bursar_fees():
         type=int
     )
 
-    term = request.args.get(
-        'term',
-        'Term 1'
-    ).strip()
-
-    # =====================================================
-    # CLASS LEVEL ORDER
-    # =====================================================
+    term = request.args.get('term', 'Term 1').strip()
 
     def get_level_order(level):
-
         name = re.sub(
             r'\s+',
             ' ',
@@ -6980,13 +6971,14 @@ def bursar_fees():
             'MIDDLE': 2,
             'MIDDLE CLASS': 2,
             'TOP': 3,
-            'TOP CLASS': 3
+            'TOP CLASS': 3,
+            'NURSERY': 0
         }
 
         if name in nursery_order:
             return (0, nursery_order[name], name)
 
-        # Primary 1-7
+        # Primary 1–7, including variations such as P.1 and P1A
         match = re.fullmatch(
             r'PRIMARY\s*([1-7])\s*[A-Z]*',
             name
@@ -7017,10 +7009,6 @@ def bursar_fees():
     cur = db.cursor()
 
     try:
-        # =====================================================
-        # GET NURSERY AND PRIMARY FEE STRUCTURES
-        # =====================================================
-
         cur.execute("""
             SELECT
                 id,
@@ -7034,20 +7022,15 @@ def bursar_fees():
             FROM pupil_fee_structure
             WHERE year = %s
               AND term = %s
-        """, (
-            year,
-            term
-        ))
+        """, (year, term))
 
         all_fee_structures = cur.fetchall()
 
-        # Keep only Nursery and Primary levels
         fee_structures = [
             fee for fee in all_fee_structures
             if get_level_order(fee.get('level')) is not None
         ]
 
-        # Nursery first, then Primary 1-7; Day/Boarding within each level
         fee_structures.sort(
             key=lambda fee: (
                 get_level_order(fee.get('level')),
