@@ -310,16 +310,6 @@ def init_db():
         )
     """)
     
-  
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS grading (
-            id SERIAL PRIMARY KEY,
-            min_score NUMERIC(5,2),
-            max_score NUMERIC(5,2),
-            grade TEXT,
-            aggregate INTEGER,
-        )
-    """)
 
     # TEACHER ASSIGNMENTS
     cursor.execute("""
