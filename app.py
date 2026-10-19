@@ -254,10 +254,9 @@ def init_db():
             subject TEXT,
             term TEXT,
             year INTEGER,bot_score NUMERIC(5,2),
-            mot_score NUMERIC(5,2)
+            mot_score NUMERIC(5,2),
             eot_score NUMERIC(5,2),
             total_score NUMERIC(5,2),
-
             grade TEXT,
             aggregate INTEGER,
 
