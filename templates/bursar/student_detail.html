@@ -1,1273 +1,518 @@
 
 {% extends "base.html" %}
 
-{% block title %}
-Fee Details - {{ student.full_name }}
-{% endblock %}
+{% block title %}Pupil Fee Details - {{ pupil.full_name }}{% endblock %}
 
 {% block content %}
 
 <div class="container-fluid">
 
-    <!-- =========================================================
-         PAGE HEADER
-         ========================================================= -->
-
+    <!-- PAGE HEADER -->
     <div class="d-flex justify-content-between align-items-center mb-3">
-
         <div>
             <h3 class="mb-1">
                 <i class="fas fa-user-graduate"></i>
-                Student Fee Details
+                Pupil Fee Details
             </h3>
-
             <p class="text-muted mb-0">
-                {{ student.full_name }}
-                —
-                {{ student.student_id }}
+                {{ pupil.full_name }} — {{ pupil.pupil_id }}
             </p>
         </div>
 
-        <div>
-            <a
-                href="{{ url_for('bursar_students') }}"
-                class="btn btn-outline-primary"
-            >
-                <i class="fas fa-arrow-left"></i>
-                Back to Students
-            </a>
-        </div>
-
+        <a href="{{ url_for('bursar_pupils') }}"
+           class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left"></i> Back to Pupils
+        </a>
     </div>
 
-
-    <!-- =========================================================
-         STUDENT INFORMATION
-         ========================================================= -->
-
+    <!-- PUPIL INFORMATION -->
     <div class="card shadow mb-3">
-
         <div class="card-header bg-primary text-white">
-
-            <i class="fas fa-id-card"></i>
-            Student Information
-
+            <i class="fas fa-id-card"></i> Pupil Information
         </div>
 
         <div class="card-body">
-
             <div class="row">
-
                 <div class="col-md-2 mb-2">
-                    <strong>Student ID</strong>
-
-                    <div>
-                        {{ student.student_id }}
-                    </div>
+                    <strong>Pupil ID</strong>
+                    <div>{{ pupil.pupil_id }}</div>
                 </div>
-
 
                 <div class="col-md-3 mb-2">
                     <strong>Full Name</strong>
-
-                    <div>
-                        {{ student.full_name }}
-                    </div>
+                    <div>{{ pupil.full_name }}</div>
                 </div>
-
 
                 <div class="col-md-2 mb-2">
                     <strong>Class</strong>
-
-                    <div>
-                        {{ student.class or '-' }}
-                    </div>
+                    <div>{{ pupil['class'] or '-' }}</div>
                 </div>
-
 
                 <div class="col-md-2 mb-2">
                     <strong>Level</strong>
-
-                    <div>
-                        {{ level or '-' }}
-                    </div>
+                    <div>{{ level or '-' }}</div>
                 </div>
-
 
                 <div class="col-md-3 mb-2">
                     <strong>Parent Phone</strong>
-
-                    <div>
-                        {{ student.parent_phone or 'Not registered' }}
-                    </div>
+                    <div>{{ pupil.parent_phone or 'Not registered' }}</div>
                 </div>
-
             </div>
-
         </div>
-
     </div>
 
-
-
-    <!-- =========================================================
-         FEE CONFIGURATION
-         ========================================================= -->
-
+    <!-- FEE CONFIGURATION -->
     <div class="card shadow mb-3">
-
         <div class="card-header bg-success text-white">
-
-            <i class="fas fa-money-check-alt"></i>
-            Fee Configuration
-
+            <i class="fas fa-money-check-alt"></i> Fee Configuration
         </div>
 
-
         <div class="card-body">
-
-            <form
-                method="POST"
-                action="{{ url_for(
-                    'bursar_student_fee_details',
-                    student_id=student.student_id
-                ) }}"
-            >
+            <form method="POST"
+                  action="{{ url_for(
+                      'bursar_pupil_fee_details',
+                      pupil_id=pupil.pupil_id
+                  ) }}">
 
                 <div class="row">
-
-
-                    <!-- PROGRAMME -->
-
-                    <div class="col-md-3 mb-3">
-
+                    <div class="col-md-4 mb-3">
                         <label class="form-label">
-                            <strong>{{ programme_label }}</strong>
+                            <strong>Class</strong>
                         </label>
-
-                        <select
-                            name="programme"
-                            class="form-select"
-                            required
-                        >
-
-                            <option value="">
-                                -- Select Programme --
-                            </option>
-
-                            {% for option in programme_options %}
-
-                            <option
-                                value="{{ option }}"
-                                {% if selected_programme == option %}
-                                    selected
-                                {% endif %}
-                            >
-                                {{ option }}
-                            </option>
-
-                            {% endfor %}
-
-                        </select>
-
+                        <input type="text"
+                               class="form-control"
+                               value="{{ level or pupil['class'] or '' }}"
+                               readonly>
                     </div>
 
-
-                    <!-- RESIDENCE -->
-
                     <div class="col-md-3 mb-3">
-
                         <label class="form-label">
                             <strong>Residence</strong>
                         </label>
-
-                        <select
-                            name="residence"
-                            class="form-select"
-                            required
-                        >
-
-                            <option value="">
-                                -- Select Residence --
-                            </option>
-
-                            <option
-                                value="Day"
-                                {% if selected_residence == 'Day' %}
-                                    selected
-                                {% endif %}
-                            >
+                        <select name="residence"
+                                class="form-select"
+                                required>
+                            <option value="">-- Select Residence --</option>
+                            <option value="Day"
+                                {% if selected_residence == 'Day' %}selected{% endif %}>
                                 Day
                             </option>
-
-                            <option
-                                value="Boarding"
-                                {% if selected_residence == 'Boarding' %}
-                                    selected
-                                {% endif %}
-                            >
+                            <option value="Boarding"
+                                {% if selected_residence == 'Boarding' %}selected{% endif %}>
                                 Boarding
                             </option>
-
                         </select>
-
                     </div>
 
-
-                    <!-- TERM -->
-
-                    <div class="col-md-3 mb-3">
-
+                    <div class="col-md-2 mb-3">
                         <label class="form-label">
                             <strong>Term</strong>
                         </label>
-
-                        <select
-                            name="term"
-                            class="form-select"
-                            required
-                        >
-
-                            <option
-                                value="Term 1"
-                                {% if selected_term == 'Term 1' %}
-                                    selected
-                                {% endif %}
-                            >
-                                Term 1
+                        <select name="term" class="form-select" required>
+                            {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
+                            <option value="{{ t }}"
+                                {% if selected_term == t %}selected{% endif %}>
+                                {{ t }}
                             </option>
-
-                            <option
-                                value="Term 2"
-                                {% if selected_term == 'Term 2' %}
-                                    selected
-                                {% endif %}
-                            >
-                                Term 2
-                            </option>
-
-                            <option
-                                value="Term 3"
-                                {% if selected_term == 'Term 3' %}
-                                    selected
-                                {% endif %}
-                            >
-                                Term 3
-                            </option>
-
+                            {% endfor %}
                         </select>
-
                     </div>
 
-
-                    <!-- YEAR -->
-
                     <div class="col-md-2 mb-3">
-
                         <label class="form-label">
                             <strong>Year</strong>
                         </label>
-
-                        <input
-                            type="number"
-                            name="year"
-                            class="form-control"
-                            value="{{ selected_year }}"
-                            min="2020"
-                            max="2100"
-                            required
-                        >
-
+                        <input type="number"
+                               name="year"
+                               class="form-control"
+                               value="{{ selected_year }}"
+                               min="2020"
+                               max="2100"
+                               required>
                     </div>
-
-
-                    <!-- LOAD BUTTON -->
 
                     <div class="col-md-1 mb-3 d-flex align-items-end">
-
-                        <button
-                            type="submit"
-                            class="btn btn-success w-100"
-                            title="Load Fee"
-                        >
+                        <button type="submit"
+                                class="btn btn-success w-100"
+                                title="Load Fee">
                             <i class="fas fa-search"></i>
                         </button>
-
                     </div>
-
                 </div>
-
             </form>
-
         </div>
-
     </div>
 
-
-
-    <!-- =========================================================
-         FEE SUMMARY
-         ========================================================= -->
-
+    <!-- FEE SUMMARY -->
     <div class="row mb-3">
-
-
-        <!-- APPLICABLE FEE -->
-
         <div class="col-md-4 mb-3">
-
             <div class="card shadow border-primary h-100">
-
                 <div class="card-body">
-
-                    <div class="text-muted">
-                        Applicable Fees
-                    </div>
-
+                    <div class="text-muted">Applicable Fees</div>
                     <h4 class="text-primary">
-
-                        UGX
-                        {{
-                            "{:,.2f}".format(
-                                fees_total or 0
-                            )
-                        }}
-
+                        UGX {{ "{:,.2f}".format(fees_total|default(0, true)|float) }}
                     </h4>
 
-
-                    {% if applicable_fee is not none %}
-
-                        <small class="text-success">
-
-                            {{ level }}
-                            |
-                            {{ selected_programme }}
-                            |
-                            {{ selected_residence }}
-                            |
-                            {{ selected_term }}
-                            |
-                            {{ selected_year }}
-
-                        </small>
-
+                    {% if applicable_fee is defined and applicable_fee is not none %}
+                    <small class="text-success">
+                        {{ level }} | {{ selected_residence or '-' }}
+                        | {{ selected_term }} | {{ selected_year }}
+                    </small>
                     {% else %}
-
-                        <small class="text-warning">
-                            Select the fee configuration above.
-                        </small>
-
+                    <small class="text-muted">
+                        Select residence, term and year, then load the fee.
+                    </small>
                     {% endif %}
-
                 </div>
-
             </div>
-
         </div>
 
-
-
-        <!-- PAID -->
-
         <div class="col-md-4 mb-3">
-
             <div class="card shadow border-success h-100">
-
                 <div class="card-body">
-
-                    <div class="text-muted">
-                        Total Paid
-                    </div>
-
+                    <div class="text-muted">Total Paid</div>
                     <h4 class="text-success">
-
-                        UGX
-                        {{
-                            "{:,.2f}".format(
-                                total_paid or 0
-                            )
-                        }}
-
+                        UGX {{ "{:,.2f}".format(total_paid|default(0, true)|float) }}
                     </h4>
-
                 </div>
-
             </div>
-
         </div>
-
-
-
-        <!-- BALANCE -->
 
         <div class="col-md-4 mb-3">
-
             <div class="card shadow h-100">
-
                 <div class="card-body">
-
-                    <div class="text-muted">
-                        Balance
-                    </div>
-
-                    <h4
-                        class="
-                        {% if fees_balance > 0 %}
-                            text-danger
-                        {% else %}
-                            text-success
-                        {% endif %}
-                        "
-                    >
-
-                        UGX
-                        {{
-                            "{:,.2f}".format(
-                                fees_balance or 0
-                            )
-                        }}
-
+                    <div class="text-muted">Balance</div>
+                    {% set balance = fees_balance|default(0, true)|float %}
+                    <h4 class="{% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                        UGX {{ "{:,.2f}".format(balance) }}
                     </h4>
-
                 </div>
-
             </div>
-
         </div>
-
     </div>
-
-
-
-    <!-- =========================================================
-         FEE DESCRIPTION
-         ========================================================= -->
 
     {% if fee_description %}
-
     <div class="alert alert-info">
-
         <i class="fas fa-info-circle"></i>
-
-        <strong>Fee Description:</strong>
-
-        {{ fee_description }}
-
+        <strong>Fee Description:</strong> {{ fee_description }}
     </div>
-
     {% endif %}
-    <!-- =========================================================
-         GENERATE PAYMENT PRN
-         ========================================================= -->
-    
-    <div class="card shadow mt-4">
-    
+
+    <!-- GENERATE PRN -->
+    <div class="card shadow mt-4 mb-3">
         <div class="card-header bg-dark text-white">
-            <i class="fas fa-receipt"></i>
-            Generate School Fees PRN
+            <i class="fas fa-receipt"></i> Generate School Fees PRN
         </div>
-    
+
         <div class="card-body">
-    
             <p class="text-muted">
-                Generate a unique 10-digit PRN for this student's
-                school fees payment. The PRN can later be used by
-                the parent/student to make payment through the
-                connected payment providers.
+                Generate a payment reference for this pupil's school fees.
             </p>
-    
-            <form
-                method="POST"
-                action="{{ url_for(
-                    'bursar_generate_fee_prn',
-                    student_id=student.student_id
-                ) }}"
-            >
-    
+
+            <form method="POST"
+                  action="{{ url_for(
+                      'bursar_generate_fee_prn',
+                      pupil_id=pupil.pupil_id
+                  ) }}">
+
                 <div class="row">
-    
-                    <!-- AMOUNT -->
-    
                     <div class="col-md-4 mb-3">
-    
                         <label class="form-label">
                             <strong>Amount (UGX)</strong>
                         </label>
-    
-                        <input
-                            type="number"
-                            name="amount"
-                            class="form-control"
-                            min="1"
-                            max="{{ fees_balance if fees_balance > 0 else '' }}"
-                            step="0.01"
-                            required
-                        >
-    
+                        <input type="number"
+                               name="amount"
+                               class="form-control"
+                               min="1"
+                               max="{{ balance if balance > 0 else '' }}"
+                               step="0.01"
+                               required>
                         <small class="text-muted">
-                            Outstanding balance:
-                            UGX {{ "{:,.2f}".format(fees_balance or 0) }}
+                            Outstanding balance: UGX {{ "{:,.2f}".format(balance) }}
                         </small>
-    
                     </div>
-    
-    
-                    <!-- TERM -->
-    
+
                     <div class="col-md-3 mb-3">
-    
-                        <label class="form-label">
-                            <strong>Term</strong>
-                        </label>
-    
-                        <select
-                            name="term"
-                            class="form-select"
-                            required
-                        >
-    
-                            <option value="Term 1"
-                                {% if selected_term == 'Term 1' %}
-                                    selected
-                                {% endif %}>
-                                Term 1
+                        <label class="form-label"><strong>Term</strong></label>
+                        <select name="term" class="form-select" required>
+                            {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
+                            <option value="{{ t }}"
+                                {% if selected_term == t %}selected{% endif %}>
+                                {{ t }}
                             </option>
-    
-                            <option value="Term 2"
-                                {% if selected_term == 'Term 2' %}
-                                    selected
-                                {% endif %}>
-                                Term 2
-                            </option>
-    
-                            <option value="Term 3"
-                                {% if selected_term == 'Term 3' %}
-                                    selected
-                                {% endif %}>
-                                Term 3
-                            </option>
-    
+                            {% endfor %}
                         </select>
-    
                     </div>
-    
-    
-                    <!-- YEAR -->
-    
+
                     <div class="col-md-3 mb-3">
-    
-                        <label class="form-label">
-                            <strong>Year</strong>
-                        </label>
-    
-                        <input
-                            type="number"
-                            name="year"
-                            class="form-control"
-                            value="{{ selected_year }}"
-                            min="2020"
-                            max="2100"
-                            required
-                        >
-    
+                        <label class="form-label"><strong>Year</strong></label>
+                        <input type="number"
+                               name="year"
+                               class="form-control"
+                               value="{{ selected_year }}"
+                               min="2020"
+                               max="2100"
+                               required>
                     </div>
-    
-    
-                    <!-- BUTTON -->
-    
+
                     <div class="col-md-2 mb-3 d-flex align-items-end">
-    
-                        <button
-                            type="submit"
-                            class="btn btn-dark w-100"
-                            {% if fees_balance <= 0 %}
-                                disabled
-                            {% endif %}
-                        >
-    
-                            <i class="fas fa-qrcode"></i>
-                            Generate PRN
-    
+                        <button type="submit"
+                                class="btn btn-dark w-100"
+                                {% if balance <= 0 %}disabled{% endif %}>
+                            <i class="fas fa-qrcode"></i> Generate PRN
                         </button>
-    
                     </div>
-    
                 </div>
-    
             </form>
-    
-    
-            {% if fees_balance <= 0 %}
-    
-                <div class="alert alert-success mt-3 mb-0">
-    
-                    <i class="fas fa-check-circle"></i>
-    
-                    This student has no outstanding balance.
-                    A new PRN cannot be generated.
-    
-                </div>
-    
-            {% endif %}
-    
-        </div>
-    
-    </div>
 
-    <!-- =========================================================
-         EXISTING PAYMENT REQUESTS / PRNs
-         ========================================================= -->
-
-    {% if fee_payment_requests is defined %}
-
-    <div class="card shadow mb-3">
-
-        <div class="card-header bg-secondary text-white">
-
-            <i class="fas fa-list"></i>
-            Payment Requests / PRNs
-
-        </div>
-
-
-        <div class="card-body">
-
-            <div class="table-responsive">
-
-                <table class="table table-bordered table-hover">
-
-                    <thead class="table-light">
-
-                        <tr>
-
-                            <th>PRN</th>
-                            <th>Amount</th>
-                            <th>Term</th>
-                            <th>Year</th>
-                            <th>Status</th>
-                            <th>Payment Method</th>
-                            <th>Created</th>
-                            <th>Actions</th>
-
-                        </tr>
-
-                    </thead>
-
-
-                    <tbody>
-
-                        {% for request in fee_payment_requests %}
-
-                        <tr>
-
-                            <td>
-
-                                <strong class="font-monospace">
-
-                                    {{ request.prn }}
-
-                                </strong>
-
-                            </td>
-
-
-                            <td>
-
-                                UGX
-                                {{
-                                    "{:,.2f}".format(
-                                        request.amount or 0
-                                    )
-                                }}
-
-                            </td>
-
-
-                            <td>
-                                {{ request.term }}
-                            </td>
-
-
-                            <td>
-                                {{ request.year }}
-                            </td>
-
-
-                            <td>
-
-                                {% if request.payment_status == 'pending' %}
-
-                                    <span class="badge bg-warning text-dark">
-                                        Pending
-                                    </span>
-
-                                {% elif request.payment_status == 'paid' %}
-
-                                    <span class="badge bg-success">
-                                        Paid
-                                    </span>
-
-                                {% elif request.payment_status == 'expired' %}
-
-                                    <span class="badge bg-secondary">
-                                        Expired
-                                    </span>
-
-                                {% elif request.payment_status == 'cancelled' %}
-
-                                    <span class="badge bg-danger">
-                                        Cancelled
-                                    </span>
-
-                                {% else %}
-
-                                    <span class="badge bg-info">
-                                        {{ request.payment_status }}
-                                    </span>
-
-                                {% endif %}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ request.payment_method or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ request.created_at or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                <div class="btn-group btn-group-sm">
-
-                                    <a
-                                        href="{{ url_for(
-                                            'bursar_print_prn',
-                                            prn=request.prn
-                                        ) }}"
-                                        target="_blank"
-                                        class="btn btn-primary"
-                                        title="Print PRN"
-                                    >
-
-                                        <i class="fas fa-print"></i>
-
-                                    </a>
-
-                                </div>
-
-                            </td>
-
-                        </tr>
-
-
-                        {% else %}
-
-                        <tr>
-
-                            <td
-                                colspan="8"
-                                class="text-center text-muted py-4"
-                            >
-
-                                <i class="fas fa-barcode fa-2x mb-2 d-block"></i>
-
-                                No payment requests have been generated.
-
-                            </td>
-
-                        </tr>
-
-                        {% endfor %}
-
-                    </tbody>
-
-                </table>
-
+            {% if balance <= 0 %}
+            <div class="alert alert-success mt-3 mb-0">
+                <i class="fas fa-check-circle"></i>
+                This pupil has no outstanding balance.
             </div>
-
+            {% endif %}
         </div>
-
     </div>
 
+    <!-- EXISTING PRNS -->
+    {% if fee_payment_requests is defined %}
+    <div class="card shadow mb-3">
+        <div class="card-header bg-secondary text-white">
+            <i class="fas fa-list"></i> Payment Requests / PRNs
+        </div>
+
+        <div class="card-body table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>PRN</th>
+                        <th>Amount</th>
+                        <th>Term</th>
+                        <th>Year</th>
+                        <th>Status</th>
+                        <th>Method</th>
+                        <th>Created</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in fee_payment_requests %}
+                    <tr>
+                        <td><strong class="font-monospace">{{ item.prn }}</strong></td>
+                        <td>UGX {{ "{:,.2f}".format(item.amount|default(0, true)|float) }}</td>
+                        <td>{{ item.term }}</td>
+                        <td>{{ item.year }}</td>
+                        <td>
+                            {% if item.payment_status == 'pending' %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                            {% elif item.payment_status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                            {% elif item.payment_status == 'expired' %}
+                                <span class="badge bg-secondary">Expired</span>
+                            {% elif item.payment_status == 'cancelled' %}
+                                <span class="badge bg-danger">Cancelled</span>
+                            {% else %}
+                                <span class="badge bg-info">{{ item.payment_status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.payment_method or '-' }}</td>
+                        <td>{{ item.created_at or '-' }}</td>
+                        <td>
+                            <a href="{{ url_for('bursar_print_prn', prn=item.prn) }}"
+                               target="_blank"
+                               class="btn btn-primary btn-sm">
+                                <i class="fas fa-print"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">
+                            No payment requests found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
     {% endif %}
 
-
-
-    <!-- =========================================================
-         RECORD PAYMENT MANUALLY
-         ========================================================= -->
-
+    <!-- MANUAL PAYMENT -->
     <div class="card shadow mb-3">
-
         <div class="card-header bg-primary text-white">
-
-            <i class="fas fa-money-bill-wave"></i>
-            Record Manual Payment
-
+            <i class="fas fa-money-bill-wave"></i> Record Manual Payment
         </div>
 
-
         <div class="card-body">
-
             <div class="alert alert-warning">
-
                 <i class="fas fa-exclamation-triangle"></i>
-
-                Use this section only for payments that have been
-                verified manually. Payments made through the PRN
-                system should eventually be posted automatically
-                by the payment provider.
-
+                Use this form only for verified manual payments.
             </div>
 
+            <form method="POST"
+                  action="{{ url_for('bursar_record_payment') }}">
 
-            <form
-                method="POST"
-                action="{{ url_for('bursar_record_payment') }}"
-            >
+                <input type="hidden"
+                       name="pupil_id"
+                       value="{{ pupil.pupil_id }}">
 
-                <input
-                    type="hidden"
-                    name="student_id"
-                    value="{{ student.student_id }}"
-                >
+                <input type="hidden"
+                       name="term"
+                       value="{{ selected_term }}">
 
+                <input type="hidden"
+                       name="year"
+                       value="{{ selected_year }}">
 
                 <div class="row">
-
-
-                    <!-- AMOUNT -->
-
                     <div class="col-md-4 mb-3">
-
-                        <label class="form-label">
-                            Amount (UGX)
-                        </label>
-
-                        <input
-                            type="number"
-                            name="amount"
-                            class="form-control"
-                            step="0.01"
-                            min="1"
-                            max="{{ fees_balance if fees_balance > 0 else '' }}"
-                            required
-                        >
-
+                        <label class="form-label">Amount (UGX)</label>
+                        <input type="number"
+                               name="amount"
+                               class="form-control"
+                               min="1"
+                               max="{{ balance if balance > 0 else '' }}"
+                               step="0.01"
+                               required>
                     </div>
-
-
-                    <!-- METHOD -->
 
                     <div class="col-md-3 mb-3">
-
-                        <label class="form-label">
-                            Payment Method
-                        </label>
-
-                        <select
-                            name="payment_method"
-                            class="form-select"
-                            required
-                        >
-
-                            <option value="Cash">
-                                Cash
-                            </option>
-
-                            <option value="Bank Deposit">
-                                Bank Deposit
-                            </option>
-
-                            <option value="Bank Transfer">
-                                Bank Transfer
-                            </option>
-
-                            <option value="MTN Mobile Money">
-                                MTN Mobile Money
-                            </option>
-
-                            <option value="Airtel Money">
-                                Airtel Money
-                            </option>
-
-                            <option value="Centenary Bank">
-                                Centenary Bank
-                            </option>
-
-                            <option value="Stanbic Bank">
-                                Stanbic Bank
-                            </option>
-
-                            <option value="Cheque">
-                                Cheque
-                            </option>
-
+                        <label class="form-label">Payment Method</label>
+                        <select name="payment_method"
+                                class="form-select"
+                                required>
+                            <option value="Cash">Cash</option>
+                            <option value="Bank Deposit">Bank Deposit</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="MTN Mobile Money">MTN Mobile Money</option>
+                            <option value="Airtel Money">Airtel Money</option>
+                            <option value="Centenary Bank">Centenary Bank</option>
+                            <option value="Stanbic Bank">Stanbic Bank</option>
+                            <option value="Cheque">Cheque</option>
                         </select>
-
                     </div>
-
-
-                    <!-- NOTES -->
 
                     <div class="col-md-5 mb-3">
-
-                        <label class="form-label">
-                            Notes
-                        </label>
-
-                        <input
-                            type="text"
-                            name="notes"
-                            class="form-control"
-                            placeholder="Receipt notes..."
-                        >
-
+                        <label class="form-label">Notes</label>
+                        <input type="text"
+                               name="notes"
+                               class="form-control"
+                               placeholder="Receipt notes">
                     </div>
-
                 </div>
 
-
-                <button
-                    type="submit"
-                    class="btn btn-success"
-                    {% if fees_balance <= 0 %}
-                        disabled
-                    {% endif %}
-                >
-
-                    <i class="fas fa-save"></i>
-
-                    Record Payment
-
+                <button type="submit"
+                        class="btn btn-success"
+                        {% if balance <= 0 %}disabled{% endif %}>
+                    <i class="fas fa-save"></i> Record Payment
                 </button>
-
-
-                {% if fees_balance <= 0 %}
-
-                <span class="text-success ms-2">
-
-                    <i class="fas fa-check-circle"></i>
-
-                    Fees fully paid.
-
-                </span>
-
-                {% endif %}
-
             </form>
-
         </div>
-
     </div>
 
-
-
-    <!-- =========================================================
-         PAYMENT HISTORY
-         ========================================================= -->
-
+    <!-- PAYMENT HISTORY -->
     <div class="card shadow mb-3">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-history"></i> Payment History</span>
 
-        <div
-            class="
-            card-header
-            bg-secondary
-            text-white
-            d-flex
-            justify-content-between
-            align-items-center
-            "
-        >
-
-            <span>
-
-                <i class="fas fa-history"></i>
-
-                Payment History
-
-            </span>
-
-
-            <button
-                type="button"
-                onclick="printSelectedReceipts()"
-                class="btn btn-light btn-sm"
-            >
-
-                <i class="fas fa-print"></i>
-
-                Print Selected Receipts
-
+            <button type="button"
+                    onclick="printSelectedReceipts()"
+                    class="btn btn-light btn-sm">
+                <i class="fas fa-print"></i> Print Selected Receipts
             </button>
-
         </div>
 
+        <div class="card-body table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>
+                            <input type="checkbox"
+                                   id="selectAllReceipts"
+                                   onclick="toggleAllReceipts(this)">
+                        </th>
+                        <th>Receipt No</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Method</th>
+                        <th>Recorded By</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
 
-        <div class="card-body">
-
-            <div class="table-responsive">
-
-                <table class="table table-bordered table-hover">
-
-                    <thead class="table-light">
-
-                        <tr>
-
-                            <th>
-
-                                <input
-                                    type="checkbox"
-                                    id="selectAll"
-                                    onclick="toggleAll(this)"
-                                >
-
-                            </th>
-
-                            <th>Receipt No</th>
-
-                            <th>Amount</th>
-
-                            <th>Date</th>
-
-                            <th>Method</th>
-
-                            <th>Recorded By</th>
-
-                            <th>Notes</th>
-
-                        </tr>
-
-                    </thead>
-
-
-                    <tbody>
-
-                        {% for p in payments %}
-
-                        <tr>
-
-                            <td>
-
-                                <input
-                                    type="checkbox"
-                                    class="receipt-checkbox"
-                                    value="{{ p.id }}"
-                                >
-
-                            </td>
-
-
-                            <td>
-
-                                {{ p.receipt_no or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                UGX
-                                {{
-                                    "{:,.2f}".format(
-                                        p.amount or 0
-                                    )
-                                }}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ p.payment_date or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ p.payment_method or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ p.recorded_by or '-' }}
-
-                            </td>
-
-
-                            <td>
-
-                                {{ p.notes or '-' }}
-
-                            </td>
-
-                        </tr>
-
-
-                        {% else %}
-
-                        <tr>
-
-                            <td
-                                colspan="7"
-                                class="text-center text-muted py-4"
-                            >
-
-                                <i
-                                    class="
-                                    fas
-                                    fa-receipt
-                                    fa-2x
-                                    mb-2
-                                    d-block
-                                    "
-                                ></i>
-
-                                No payment records found.
-
-                            </td>
-
-                        </tr>
-
-                        {% endfor %}
-
-                    </tbody>
-
-                </table>
-
-            </div>
-
+                <tbody>
+                    {% for p in payments %}
+                    <tr>
+                        <td>
+                            <input type="checkbox"
+                                   class="receipt-checkbox"
+                                   value="{{ p.id }}">
+                        </td>
+                        <td>{{ p.receipt_no or '-' }}</td>
+                        <td>UGX {{ "{:,.2f}".format(p.amount|default(0, true)|float) }}</td>
+                        <td>{{ p.payment_date or '-' }}</td>
+                        <td>{{ p.payment_method or '-' }}</td>
+                        <td>{{ p.recorded_by or '-' }}</td>
+                        <td>{{ p.notes or '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="fas fa-receipt fa-2x mb-2 d-block"></i>
+                            No payment records found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-
     </div>
 
-
-
-    <!-- =========================================================
-         ACTION BUTTONS
-         ========================================================= -->
-
+    <!-- ACTIONS -->
     <div class="mb-4">
-
-        <a
-            href="{{ url_for(
-                'bursar_clearance',
-                student_id=student.student_id
-            ) }}"
-            class="btn btn-info"
-        >
-
-            <i class="fas fa-print"></i>
-
-            Clearance Card
-
+        <a href="{{ url_for('bursar_clearance', pupil_id=pupil.pupil_id) }}"
+           class="btn btn-info">
+            <i class="fas fa-print"></i> Clearance Card
         </a>
 
-
-        <a
-            href="{{ url_for(
-                'bursar_send_reminder',
-                student_id=student.student_id
-            ) }}"
-            class="btn btn-warning"
-        >
-
-            <i class="fas fa-bell"></i>
-
-            Send Reminder
-
+        <a href="{{ url_for('bursar_send_reminder', pupil_id=pupil.pupil_id) }}"
+           class="btn btn-warning">
+            <i class="fas fa-bell"></i> Send Reminder
         </a>
 
-
-        <a
-            href="{{ url_for('bursar_students') }}"
-            class="btn btn-outline-primary"
-        >
-
-            <i class="fas fa-arrow-left"></i>
-
-            Back to Students
-
+        <a href="{{ url_for('bursar_pupils') }}"
+           class="btn btn-outline-primary">
+            <i class="fas fa-arrow-left"></i> Back to Pupils
         </a>
-
     </div>
 
 </div>
 
-
-
-<!-- =========================================================
-     JAVASCRIPT
-     ========================================================= -->
-
 <script>
-
-function toggleAll(source) {
-
-    const checkboxes =
-        document.querySelectorAll(
-            '.receipt-checkbox'
-        );
-
-    checkboxes.forEach(function(checkbox) {
-
+function toggleAllReceipts(source) {
+    document.querySelectorAll('.receipt-checkbox').forEach(function (checkbox) {
         checkbox.checked = source.checked;
-
     });
-
 }
-
 
 function printSelectedReceipts() {
-
-    const selected =
-        Array.from(
-            document.querySelectorAll(
-                '.receipt-checkbox:checked'
-            )
-        ).map(
-            checkbox => checkbox.value
-        );
-
+    const selected = Array.from(
+        document.querySelectorAll('.receipt-checkbox:checked')
+    ).map(function (checkbox) {
+        return checkbox.value;
+    });
 
     if (selected.length === 0) {
-
-        alert(
-            'Please select at least one receipt.'
-        );
-
+        alert('Please select at least one receipt.');
         return;
-
     }
 
+    const url = "{{ url_for('bursar_print_receipts') }}"
+        + "?ids=" + encodeURIComponent(selected.join(','));
 
-    const url =
-        "{{ url_for('bursar_print_receipts') }}"
-        + "?ids="
-        + selected.join(',');
-
-
-    window.open(
-        url,
-        '_blank'
-    );
-
+    window.open(url, '_blank');
 }
-
 </script>
 
 {% endblock %}
-```
