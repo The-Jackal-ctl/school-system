@@ -1,475 +1,356 @@
+
 {% extends "base.html" %}
-{% block title %}Upload O-Level Marks{% endblock %}
+
+{% block title %}Upload Pupil Marks{% endblock %}
 
 {% block content %}
 
-<div class="card shadow">
+<div class="container-fluid">
 
-<div class="card-header bg-primary text-white">
-    Upload O-Level Marks - Class {{ assigned_class }}
+    <div class="card shadow">
+
+        <!-- HEADER -->
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-edit"></i>
+                Upload Nursery and Primary Marks
+            </h5>
+        </div>
+
+        <div class="card-body">
+
+            <!-- CLASS, SUBJECT, TERM AND YEAR FILTERS -->
+            <form method="GET" action="{{ url_for('teacher_upload_marks') }}"
+                  class="row g-3 mb-4">
+
+                <div class="col-md-3">
+                    <label for="class" class="form-label">
+                        Class
+                    </label>
+
+                    <select
+                        name="class"
+                        id="class"
+                        class="form-select"
+                        required
+                        onchange="this.form.submit()">
+
+                        <option value="">Select Class</option>
+
+                        {% for cls in classes %}
+                        <option value="{{ cls }}"
+                            {% if cls == selected_class %}selected{% endif %}>
+                            {{ cls }}
+                        </option>
+                        {% endfor %}
+
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label for="subject" class="form-label">
+                        Subject
+                    </label>
+
+                    <select
+                        name="subject"
+                        id="subject"
+                        class="form-select"
+                        {% if not selected_class %}disabled{% endif %}
+                        onchange="this.form.submit()">
+
+                        <option value="">Select Subject</option>
+
+                        {% for sub in subjects %}
+                        <option value="{{ sub }}"
+                            {% if sub == selected_subject %}selected{% endif %}>
+                            {{ sub }}
+                        </option>
+                        {% endfor %}
+
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label for="term" class="form-label">
+                        Term
+                    </label>
+
+                    <select name="term" id="term" class="form-select">
+                        {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
+                        <option value="{{ t }}"
+                            {% if term == t %}selected{% endif %}>
+                            {{ t }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label for="year" class="form-label">
+                        Academic Year
+                    </label>
+
+                    <input
+                        type="number"
+                        name="year"
+                        id="year"
+                        class="form-control"
+                        value="{{ year }}"
+                        required>
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i>
+                        Apply
+                    </button>
+                </div>
+
+            </form>
+
+            <!-- INFORMATION -->
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+
+                Select your assigned class and subject before entering marks.
+                Only pupils belonging to the selected class are displayed.
+
+                {% if selected_class %}
+                <hr>
+                <strong>Selected Class:</strong> {{ selected_class }}
+                {% if selected_subject %}
+                <br>
+                <strong>Selected Subject:</strong> {{ selected_subject }}
+                {% endif %}
+                <br>
+                <strong>Assessment:</strong>
+                {{ term }} {{ year }}
+                {% endif %}
+            </div>
+
+            {% if selected_class %}
+
+            <!-- ENTRY TABS -->
+            <ul class="nav nav-tabs" role="tablist">
+
+                <li class="nav-item" role="presentation">
+                    <button
+                        class="nav-link active"
+                        id="manual-tab"
+                        data-bs-toggle="tab"
+                        data-bs-target="#manual"
+                        type="button"
+                        role="tab">
+                        <i class="fas fa-keyboard"></i>
+                        Manual Entry
+                    </button>
+                </li>
+
+                <li class="nav-item" role="presentation">
+                    <button
+                        class="nav-link"
+                        id="upload-tab"
+                        data-bs-toggle="tab"
+                        data-bs-target="#upload"
+                        type="button"
+                        role="tab">
+                        <i class="fas fa-file-excel"></i>
+                        Excel Upload
+                    </button>
+                </li>
+
+            </ul>
+
+            <div class="tab-content mt-3">
+
+                <!-- =========================================
+                     MANUAL MARKS ENTRY
+                ========================================== -->
+                <div
+                    class="tab-pane fade show active"
+                    id="manual"
+                    role="tabpanel">
+
+                    {% if pupils %}
+
+                    <form
+                        method="POST"
+                        action="{{ url_for('save_pupil_marks') }}"
+                        id="manualMarksForm">
+
+                        <input type="hidden" name="class"
+                               value="{{ selected_class }}">
+
+                        <input type="hidden" name="subject"
+                               value="{{ selected_subject }}">
+
+                        <input type="hidden" name="term"
+                               value="{{ term }}">
+
+                        <input type="hidden" name="year"
+                               value="{{ year }}">
+
+                        <div class="table-responsive">
+
+                            <table class="table table-bordered table-striped align-middle">
+
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Pupil ID</th>
+                                        <th>Pupil Name</th>
+
+                                        {% for assessment in assessment_types %}
+                                        <th>{{ assessment }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+
+                                    {% for pupil in pupils %}
+                                    <tr>
+
+                                        <td>{{ loop.index }}</td>
+
+                                        <td>
+                                            {{ pupil.pupil_id }}
+
+                                            <input
+                                                type="hidden"
+                                                name="pupil_id[]"
+                                                value="{{ pupil.pupil_id }}">
+                                        </td>
+
+                                        <td>{{ pupil.full_name }}</td>
+
+                                        {% for assessment in assessment_types %}
+                                        <td>
+                                            <input
+                                                type="number"
+                                                name="{{ assessment|lower }}[]"
+                                                class="form-control"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                placeholder="—">
+                                        </td>
+                                        {% endfor %}
+
+                                    </tr>
+                                    {% endfor %}
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                        {% if selected_subject %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i>
+                            Save Marks
+                        </button>
+                        {% else %}
+                        <div class="alert alert-warning">
+                            Select a subject before saving marks.
+                        </div>
+                        {% endif %}
+
+                    </form>
+
+                    {% else %}
+
+                    <div class="alert alert-warning">
+                        No pupils were found in {{ selected_class }}.
+                    </div>
+
+                    {% endif %}
+
+                </div>
+
+                <!-- =========================================
+                     EXCEL MARKS UPLOAD
+                ========================================== -->
+                <div
+                    class="tab-pane fade"
+                    id="upload"
+                    role="tabpanel">
+
+                    <div class="alert alert-warning">
+                        <strong>Excel column format</strong>
+
+                        <p class="mb-2 mt-2">
+                            Use these column headings in the first row:
+                        </p>
+
+                        <code>pupil_id, BOT, MOT, EOT</code>
+
+                        <p class="mb-0 mt-2">
+                            The uploaded marks must belong to the selected
+                            class, subject, term and year.
+                        </p>
+                    </div>
+
+                    <form
+                        method="POST"
+                        action="{{ url_for('teacher_upload_marks_save') }}"
+                        enctype="multipart/form-data"
+                        id="uploadMarksForm">
+
+                        <input type="hidden" name="class"
+                               value="{{ selected_class }}">
+
+                        <input type="hidden" name="subject"
+                               value="{{ selected_subject }}">
+
+                        <input type="hidden" name="term"
+                               value="{{ term }}">
+
+                        <input type="hidden" name="year"
+                               value="{{ year }}">
+
+                        <div class="mb-3">
+                            <label for="marks_file" class="form-label">
+                                Excel File (.xlsx)
+                            </label>
+
+                            <input
+                                type="file"
+                                name="marks_file"
+                                id="marks_file"
+                                class="form-control"
+                                accept=".xlsx"
+                                required>
+                        </div>
+
+                        <button
+                            type="submit"
+                            class="btn btn-primary"
+                            {% if not selected_subject %}disabled{% endif %}>
+
+                            <i class="fas fa-upload"></i>
+                            Upload Marks
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+            {% else %}
+
+            <div class="alert alert-secondary text-center">
+                <i class="fas fa-users"></i>
+                Select a class above to display its pupils and enter marks.
+            </div>
+
+            {% endif %}
+
+        </div>
+    </div>
 </div>
-
-
-<div class="card-body">
-
-
-<!-- Select Class -->
-
-<div class="mb-3">
-
-<label>Select Class</label>
-
-<select class="form-select"
-onchange="window.location.href='?class_name='+this.value">
-
-
-{% for cls in teacher_classes %}
-
-<option value="{{ cls.class_name }}"
-{% if cls.class_name == selected_class %}selected{% endif %}>
-
-{{ cls.class_name }}
-
-</option>
-
-{% endfor %}
-
-
-</select>
-
-</div>
-
-
-
-<hr>
-
-
-<!-- COMMON DETAILS -->
-
-<div class="row mb-3">
-
-
-<div class="col-md-3">
-
-<label>Subject</label>
-
-<input type="text"
-id="subject"
-class="form-control"
-required>
-
-</div>
-
-
-
-<div class="col-md-2">
-
-<label>Term</label>
-
-<input type="text"
-id="term"
-value="Term 1"
-class="form-control"
-required>
-
-</div>
-
-
-
-<div class="col-md-2">
-
-<label>Year</label>
-
-<input type="text"
-id="year"
-value="{{ current_year }}"
-class="form-control"
-required>
-
-</div>
-
-
-</div>
-
-
-
-<!-- TABS -->
-
-<ul class="nav nav-tabs">
-
-
-<li class="nav-item">
-
-<button class="nav-link active"
-data-bs-toggle="tab"
-data-bs-target="#manual">
-
-Manual Entry
-
-</button>
-
-</li>
-
-
-
-<li class="nav-item">
-
-<button class="nav-link"
-data-bs-toggle="tab"
-data-bs-target="#upload">
-
-Upload Excel
-
-</button>
-
-</li>
-
-
-</ul>
-
-
-
-
-<div class="tab-content mt-3">
-
-
-
-<!-- ================= -->
-<!-- MANUAL ENTRY -->
-<!-- ================= -->
-
-
-<div class="tab-pane fade show active"
-id="manual">
-
-
-
-<form method="POST"
-action="{{ url_for('save_olevel_marks') }}">
-
-
-<input type="hidden"
-name="subject"
-id="manual_subject">
-
-
-<input type="hidden"
-name="term"
-id="manual_term">
-
-
-<input type="hidden"
-name="year"
-id="manual_year">
-
-
-
-<table class="table table-bordered table-striped">
-
-
-<thead class="table-light">
-
-<tr>
-
-<th>Student ID</th>
-<th>Student Name</th>
-<th>AI1</th>
-<th>AI2</th>
-<th>AI3</th>
-<th>EOT</th>
-<th>Teacher Initials</th>
-
-</tr>
-
-</thead>
-
-
-
-<tbody>
-
-
-{% for student in students %}
-
-
-<tr>
-
-
-<td>
-
-{{ student.student_id }}
-
-<input type="hidden"
-name="student_id[]"
-value="{{ student.student_id }}">
-
-</td>
-
-
-
-<td>
-
-{{ student.full_name }}
-
-</td>
-
-
-
-<td>
-<input type="number"
-class="form-control"
-name="ai1[]"
-step="0.01"
-min="0"
-max="100">
-
-</td>
-
-
-
-<td>
-
-<input type="number"
-class="form-control"
-name="ai2[]"
-step="0.01"
-min="0"
-max="100">
-
-</td>
-
-
-
-<td>
-
-<input type="number"
-class="form-control"
-name="ai3[]"
-step="0.01"
-min="0"
-max="100">
-
-</td>
-
-
-
-<td>
-
-<input type="number"
-class="form-control"
-name="eot_score[]"
-step="0.01"
-min="0"
-max="100">
-
-</td>
-
-
-
-<td>
-
-<input type="text"
-class="form-control"
-name="teacher_initials[]">
-
-</td>
-
-
-</tr>
-
-
-{% endfor %}
-
-
-
-</tbody>
-
-
-</table>
-
-
-
-<button type="submit"
-class="btn btn-success">
-
-Save Marks
-
-</button>
-
-
-</form>
-
-
-
-</div>
-
-
-
-
-
-
-<!-- ================= -->
-<!-- EXCEL UPLOAD -->
-<!-- ================= -->
-
-
-<div class="tab-pane fade"
-id="upload">
-
-
-<form method="POST"
-enctype="multipart/form-data"
-id="uploadForm">
-
-
-
-<input type="hidden"
-name="subject"
-id="upload_subject">
-
-
-<input type="hidden"
-name="term"
-id="upload_term">
-
-
-<input type="hidden"
-name="year"
-id="upload_year">
-
-
-
-<label>
-Excel File (.xlsx)
-</label>
-
-
-<input type="file"
-name="marks_file"
-class="form-control"
-accept=".xlsx,.xls"
-required>
-
-
-
-<small class="text-muted">
-
-Columns:
-
-student_id,
-
-ai1,
-
-ai2,
-
-ai3,
-
-eot_score,
-
-teacher_initials
-
-</small>
-
-
-
-<button type="submit"
-class="btn btn-primary mt-3">
-
-Upload Marks
-
-</button>
-
-
-</form>
-
-
-</div>
-
-
-</div>
-
-
-</div>
-
-</div>
-
-
-
-
-<script>
-
-function copyDetails(){
-
-
-document.getElementById(
-"manual_subject"
-).value =
-document.getElementById(
-"subject"
-).value;
-
-
-
-document.getElementById(
-"manual_term"
-).value =
-document.getElementById(
-"term"
-).value;
-
-
-
-document.getElementById(
-"manual_year"
-).value =
-document.getElementById(
-"year"
-).value;
-
-
-
-document.getElementById(
-"upload_subject"
-).value =
-document.getElementById(
-"subject"
-).value;
-
-
-
-document.getElementById(
-"upload_term"
-).value =
-document.getElementById(
-"term"
-).value;
-
-
-
-document.getElementById(
-"upload_year"
-).value =
-document.getElementById(
-"year"
-).value;
-
-
-}
-
-
-
-document.querySelectorAll("form")
-.forEach(function(form){
-
-form.addEventListener(
-"submit",
-copyDetails
-);
-
-});
-
-
-</script>
-
-
 
 {% endblock %}
