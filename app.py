@@ -5031,280 +5031,321 @@ def teacher_report_card(pupil_id):
 
 @app.route('/teacher/edit_pupil/<pupil_id>', methods=['GET', 'POST'])
 def teacher_edit_pupil(pupil_id):
+    import re
+    import os
+    from datetime import datetime
+    from flask import (
+        request, session, flash, redirect,
+        url_for, render_template, abort
+    )
+    from werkzeug.utils import secure_filename
 
     if not check_permission(['classteacher']):
         abort(403)
 
+    user_id = session.get('user_id')
+
+    # ---------------------------------------------------------
+    # VALIDATE NURSERY AND PRIMARY CLASSES
+    # ---------------------------------------------------------
+    def normalize_class(value):
+        return re.sub(
+            r'\s+',
+            ' ',
+            (value or '').strip()
+        ).upper()
+
+    def valid_school_class(value):
+        name = normalize_class(value)
+        compact = re.sub(r'[\s.]', '', name)
+
+        if name in {
+            'BABY', 'BABY CLASS',
+            'MIDDLE', 'MIDDLE CLASS',
+            'TOP', 'TOP CLASS'
+        }:
+            return True
+
+        if re.fullmatch(
+            r'(?:PRIMARY\s*|P\.?\s*)[1-7]\s*[A-Z]?',
+            name
+        ):
+            return True
+
+        if re.fullmatch(r'P[1-7][A-Z]?', compact):
+            return True
+
+        return False
+
     db = get_db()
     cur = db.cursor()
 
-    # =====================================================
-    # GET PUPIL
-    # =====================================================
+    try:
+        # -----------------------------------------------------
+        # GET PUPIL
+        # -----------------------------------------------------
+        cur.execute("""
+            SELECT *
+            FROM pupils
+            WHERE pupil_id = %s
+        """, (pupil_id,))
 
-    cur.execute("""
-        SELECT *
-        FROM pupils
-        WHERE pupil_id=%s
-    """, (pupil_id,))
+        pupil = cur.fetchone()
 
-    pupil = cur.fetchone()
+        if not pupil:
+            flash('Pupil not found.', 'danger')
+            return redirect(url_for('teacher_pupils'))
 
-    if not pupil:
+        current_class = (pupil.get('class') or '').strip()
 
-        cur.close()
+        # -----------------------------------------------------
+        # VERIFY CLASS-TEACHER ACCESS TO THE EXISTING PUPIL
+        # -----------------------------------------------------
+        if not teacher_has_class_access(
+            user_id,
+            current_class,
+            assignment_type='classteacher'
+        ):
+            abort(403)
 
-        flash(
-            'Pupil not found.',
-            'danger'
-        )
+        # -----------------------------------------------------
+        # UPDATE PUPIL
+        # -----------------------------------------------------
+        if request.method == 'POST':
+            full_name = request.form.get(
+                'full_name', ''
+            ).strip()
 
-        return redirect(
-            url_for('teacher_pupils')
-        )
+            parent_phone = request.form.get(
+                'parent_phone', ''
+            ).strip() or None
 
-    # =====================================================
-    # GET CLASS TEACHER'S ASSIGNED CLASS
-    # =====================================================
+            parent_email = request.form.get(
+                'parent_email', ''
+            ).strip() or None
 
-    cur.execute("""
-        SELECT class_name
-        FROM teacher_class_assignments
-        WHERE user_id=%s
-        AND assignment_type='classteacher'
-    """, (session.get('user_id'),))
+            address = request.form.get(
+                'address', ''
+            ).strip() or None
 
-    result = cur.fetchone()
+            submitted_class = request.form.get(
+                'class', ''
+            ).strip()
 
-    assigned_class = (
-        result['class_name']
-        if result
-        else None
-    )
+            residence = request.form.get(
+                'residence', ''
+            ).strip()
 
-    # =====================================================
-    # UPDATE PUPIL
-    # =====================================================
+            admission_date = request.form.get(
+                'admission_date', ''
+            ).strip() or None
 
-    if request.method == 'POST':
+            date_of_birth = request.form.get(
+                'date_of_birth', ''
+            ).strip() or None
 
-        full_name = request.form.get(
-            'full_name',
-            ''
-        ).strip()
+            sex = request.form.get(
+                'sex', ''
+            ).strip() or None
 
-        parent_phone = request.form.get(
-            'parent_phone',
-            ''
-        ).strip()
+            preferred_house = request.form.get(
+                'preferred_house', ''
+            ).strip() or None
 
-        # -------------------------------------------------
-        # KEEP EXISTING STREAM SYSTEM
-        #
-        # Examples:
-        # S.1
-        # S.1A
-        # S.1B
-        # S.5
-        # S.6
-        # -------------------------------------------------
+            disability = request.form.get(
+                'disability', ''
+            ).strip() or None
 
-        class_name = request.form.get(
-            'class',
-            ''
-        ).strip().upper()
-
-        admission_date = request.form.get(
-            'admission_date',
-            ''
-        ).strip()
-        
-        if admission_date == '':
-            admission_date = None
-        
-        
-        date_of_birth = request.form.get(
-            'date_of_birth',
-            ''
-        ).strip()
-        
-        if date_of_birth == '':
-            date_of_birth = None
-            
-        sex = request.form.get(
-            'sex',
-            ''
-        )
-
-        preferred_house = request.form.get(
-            'preferred_house',
-            ''
-        )
-
-        disability = request.form.get(
-            'disability',
-            ''
-        )
-  
-        # =================================================
-        # NEW: RESIDENCE
-        # =================================================
-
-        residence = request.form.get(
-            'residence',
-            ''
-        ).strip()
-
-        # =================================================
-        # VALIDATE RESIDENCE
-        # =================================================
-
-        if residence not in [
-            'Day',
-            'Boarding'
-        ]:
-
-            cur.close()
-
-            flash(
-                'Please select Day or Boarding.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'teacher_edit_pupil',
-                    pupil_id=pupil_id
+            # -------------------------------------------------
+            # VALIDATE REQUIRED FIELDS
+            # -------------------------------------------------
+            if not full_name:
+                flash('Please enter the pupil’s full name.', 'danger')
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
                 )
-            )
 
-        # =================================================
-        # CALCULATE AGE
-        # =================================================
+            if not valid_school_class(submitted_class):
+                flash(
+                    'Select a valid Nursery or Primary class '
+                    '(Baby, Middle, Top, or Primary 1–7 with an optional stream).',
+                    'danger'
+                )
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                )
 
-        age = None
+            if residence not in ['Day', 'Boarding']:
+                flash('Please select Day or Boarding.', 'danger')
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                )
 
-        if date_of_birth:
+            if sex not in [None, 'Male', 'Female']:
+                flash('Please select a valid sex.', 'danger')
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                )
 
+            # -------------------------------------------------
+            # VERIFY ACCESS TO THE DESTINATION CLASS
+            # Prevent class transfers outside assigned classes.
+            # -------------------------------------------------
+            if not teacher_has_class_access(
+                user_id,
+                submitted_class,
+                assignment_type='classteacher'
+            ):
+                flash(
+                    'You cannot transfer this pupil to a class '
+                    'outside your assigned classes.',
+                    'danger'
+                )
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                )
+
+            # -------------------------------------------------
+            # VALIDATE DATES AND CALCULATE AGE
+            # -------------------------------------------------
             try:
+                if admission_date:
+                    admission_date = datetime.strptime(
+                        admission_date, '%Y-%m-%d'
+                    ).date()
 
-                birth_date = datetime.strptime(
-                    date_of_birth,
-                    '%Y-%m-%d'
-                ).date()
+                if date_of_birth:
+                    date_of_birth = datetime.strptime(
+                        date_of_birth, '%Y-%m-%d'
+                    ).date()
 
+                if date_of_birth and date_of_birth > datetime.now().date():
+                    flash('Date of birth cannot be in the future.', 'danger')
+                    return redirect(
+                        url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                    )
+
+            except ValueError:
+                flash('Please enter valid dates.', 'danger')
+                return redirect(
+                    url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                )
+
+            age = None
+
+            if date_of_birth:
                 today = datetime.now().date()
-
                 age = (
-                    today.year
-                    - birth_date.year
+                    today.year - date_of_birth.year
                     - (
                         (today.month, today.day)
-                        <
-                        (birth_date.month, birth_date.day)
+                        < (date_of_birth.month, date_of_birth.day)
                     )
                 )
 
-            except Exception:
+            # -------------------------------------------------
+            # HANDLE OPTIONAL PHOTO
+            # -------------------------------------------------
+            photo_path = pupil.get('photo_path')
+            photo = request.files.get('photo')
 
-                age = None
+            if photo and photo.filename:
+                if not allowed_file(
+                    photo.filename,
+                    ALLOWED_IMAGE_EXTENSIONS
+                ):
+                    flash(
+                        'Unsupported photo format. '
+                        'Please upload an allowed image file.',
+                        'danger'
+                    )
+                    return redirect(
+                        url_for('teacher_edit_pupil', pupil_id=pupil_id)
+                    )
 
-        # =================================================
-        # HANDLE PHOTO
-        # =================================================
+                safe_name = secure_filename(photo.filename)
+                extension = safe_name.rsplit('.', 1)[-1].lower()
 
-        photo_path = pupil.get(
-            'photo_path',
-            'default_avatar.png'
-        )
+                photo_filename = f'{pupil_id}.{extension}'
+                upload_folder = app.config['UPLOAD_FOLDER']
 
-        photo = request.files.get('photo')
+                os.makedirs(upload_folder, exist_ok=True)
 
-        if (
-            photo
-            and photo.filename
-            and allowed_file(
-                photo.filename,
-                ALLOWED_IMAGE_EXTENSIONS
-            )
-        ):
-
-            ext = photo.filename.rsplit(
-                '.',
-                1
-            )[1].lower()
-
-            photo_filename = f"{pupil_id}.{ext}"
-
-            photo.save(
-                os.path.join(
-                    app.config['UPLOAD_FOLDER'],
-                    photo_filename
+                photo.save(
+                    os.path.join(upload_folder, photo_filename)
                 )
+
+                photo_path = photo_filename
+
+            # -------------------------------------------------
+            # SAVE CHANGES
+            #
+            # This assumes parent_email and address are columns
+            # in your pupils table, as used by the template.
+            # -------------------------------------------------
+            cur.execute("""
+                UPDATE pupils
+                SET
+                    full_name = %s,
+                    parent_phone = %s,
+                    parent_email = %s,
+                    address = %s,
+                    class = %s,
+                    admission_date = %s,
+                    date_of_birth = %s,
+                    age = %s,
+                    sex = %s,
+                    preferred_house = %s,
+                    disability = %s,
+                    photo_path = %s,
+                    residence = %s
+                WHERE pupil_id = %s
+            """, (
+                full_name,
+                parent_phone,
+                parent_email,
+                address,
+                submitted_class,
+                admission_date,
+                date_of_birth,
+                age,
+                sex,
+                preferred_house,
+                disability,
+                photo_path,
+                residence,
+                pupil_id
+            ))
+
+            db.commit()
+
+            flash(
+                f'Pupil {full_name} updated successfully.',
+                'success'
             )
 
-            photo_path = photo_filename
+            return redirect(url_for('teacher_pupils'))
 
-        # =================================================
-        # UPDATE PUPIL
-        # =================================================
+        # -----------------------------------------------------
+        # DISPLAY FORM
+        # -----------------------------------------------------
+        return render_template(
+            'teacher/edit_pupil.html',
+            pupil=pupil
+        )
 
-        cur.execute("""
-            UPDATE pupils
-            SET
-                full_name=%s,
-                parent_phone=%s,
-                class=%s,
-                admission_date=%s,
-                date_of_birth=%s,
-                age=%s,
-                sex=%s,
-                preferred_house=%s,
-                disability=%s,
-                photo_path=%s,
-                residence=%s
-
-            WHERE pupil_id=%s
-        """, (
-            full_name,
-            parent_phone,
-            class_name,
-            admission_date,
-            date_of_birth,
-            age,
-            sex,
-            preferred_house,
-            disability,
-            photo_path,
-            residence,
-            pupil_id
-        ))
-
-        db.commit()
-
-        cur.close()
-
+    except Exception:
+        db.rollback()
+        app.logger.exception('Error editing pupil %s', pupil_id)
         flash(
-            f'Pupil {full_name} updated successfully!',
-            'success'
+            'An error occurred while processing the pupil record.',
+            'danger'
         )
+        return redirect(url_for('teacher_pupils'))
 
-        return redirect(
-            url_for('teacher_pupils')
-        )
-
-    # =====================================================
-    # DISPLAY EDIT FORM
-    # =====================================================
-
-    cur.close()
-
-    return render_template(
-        'teacher/edit_pupil.html',
-        pupil=pupil,
-        assigned_class=assigned_class
-    )
-
+    finally:
+        cur.close()
+        db.close()
 
 @app.route('/teacher/remove_pupil/<pupil_id>', methods=['POST'])
 def teacher_remove_pupil(pupil_id):
