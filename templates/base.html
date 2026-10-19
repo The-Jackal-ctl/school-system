@@ -120,7 +120,7 @@
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'bursar' %}
-                <a href="{{ url_for('bursar_students') }}"><i class="fas fa-users"></i> Fee Management</a>
+                <a href="{{ url_for('bursar_pupils') }}"><i class="fas fa-users"></i> Fee Management</a>
                 <a href="{{ url_for('bursar_fees') }}">
                     <i class="fas fa-money-bill-wave"></i>
                     Student Fees
