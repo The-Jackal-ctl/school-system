@@ -10,7 +10,6 @@ import random
 import string
 import sqlite3
 from dateutil.relativedelta import relativedelta
-import qrcode
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -156,20 +155,6 @@ def init_db():
     """)
     cursor.execute("""
         ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS face_descriptor TEXT;""")
-    cursor.execute("""
-        ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS programme TEXT
-    """)
-    cursor.execute("""
-        ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS signature_filename VARCHAR(255);
-    """)
-
-    cursor.execute("""ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS qr_token TEXT UNIQUE;""")
-    cursor.execute("""
-        ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS residence TEXT
     """)
     # STAFF
@@ -268,37 +253,21 @@ def init_db():
             pupil_id TEXT,
             subject TEXT,
             term TEXT,
-            year INTEGER,
-
-            ai1 NUMERIC(5,2),
-            ai2 NUMERIC(5,2),
-            ai3 NUMERIC(5,2),
-            ai_average NUMERIC(5,2),
-            ai_contribution NUMERIC(5,2),
-
+            year INTEGER,bot_score NUMERIC(5,2),
+            mot_score NUMERIC(5,2)
             eot_score NUMERIC(5,2),
             total_score NUMERIC(5,2),
 
             grade TEXT,
-            identifier NUMERIC(5,2),
-            descriptor TEXT,
+            aggregate INTEGER,
 
             teacher_initials TEXT,
             teacher_id INTEGER,
-
-            paper1 NUMERIC,
-            paper2 NUMERIC,
-            points INTEGER,
-
             FOREIGN KEY(pupil_id)
                 REFERENCES pupils(pupil_id),
 
             UNIQUE(pupil_id, subject, term, year)
         )
-    """)
-    cursor.execute("""
-        ALTER TABLE marks
-        ADD COLUMN IF NOT EXISTS final_mark NUMERIC
     """)
 
     cursor.execute("""
@@ -341,26 +310,6 @@ def init_db():
                 CHECK (amount > 0)
         )
     """)
-# SCHEDULES
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS schedules (
-            id SERIAL PRIMARY KEY,
-            type TEXT,
-            term_scope TEXT,
-            content TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # ==================== GRADING SYSTEM ====================
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS grading_system (
-            id SERIAL PRIMARY KEY,
-            min_score NUMERIC,
-            max_score NUMERIC,
-            grade TEXT,
-            descriptor TEXT
-        )
-    """)
     
     # ==================== A-LEVEL GRADING ====================
     cursor.execute("""
@@ -369,47 +318,9 @@ def init_db():
             min_score NUMERIC(5,2),
             max_score NUMERIC(5,2),
             grade TEXT,
-            points INTEGER,
-            is_subsidiary INTEGER DEFAULT 0
+            aggregate INTEGER,
         )
     """)
-    
-    # ==================== IDENTIFIER GRADING ====================
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS identifier_grading (
-            id SERIAL PRIMARY KEY,
-            min_value NUMERIC(5,2),
-            max_value NUMERIC(5,2),
-            identifier NUMERIC(5,2)
-        )
-    """)
-    
-    # Add identifier column to existing PostgreSQL installations
-    cursor.execute("""
-        ALTER TABLE identifier_grading
-        ADD COLUMN IF NOT EXISTS identifier NUMERIC(5,2)
-    """)
-
-
-    # TEACHER COMMENTS
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS teacher_comments (
-            id SERIAL PRIMARY KEY,
-            pupil_id TEXT,
-            term TEXT,
-            year INTEGER,
-
-            comment TEXT,
-            headteacher_comment TEXT,
-
-            class_teacher_comment_locked INTEGER DEFAULT 0,
-            headteacher_comment_locked INTEGER DEFAULT 0,
-
-            FOREIGN KEY(pupil_id)
-                REFERENCES pupils(pupil_id)
-        )
-    """)
-
 
     # TEACHER ASSIGNMENTS
     cursor.execute("""
@@ -476,21 +387,6 @@ def init_db():
     cursor.execute("""ALTER TABLE school_settings
         ADD COLUMN IF NOT EXISTS school_website TEXT;""")
 
-    # PREDEFINED COMMENTS
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS predefined_comments (
-            id SERIAL PRIMARY KEY,
-
-            comment_type TEXT,
-            comment_text TEXT,
-
-            is_active INTEGER DEFAULT 1,
-
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-
     # PAYMENTS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS payments (
@@ -547,8 +443,6 @@ def init_db():
     
             level TEXT NOT NULL,
     
-            programme TEXT NOT NULL,
-    
             residence TEXT NOT NULL,
     
             term TEXT NOT NULL,
@@ -563,7 +457,6 @@ def init_db():
     
             UNIQUE (
                 level,
-                programme,
                 residence,
                 term,
                 year
@@ -878,8 +771,6 @@ def init_db():
                 REFERENCES staff(id)
         )
     """)
-    cursor.execute("""ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS pupil_signature TEXT;""")
     cursor.execute("""
         ALTER TABLE school_settings
         ADD COLUMN IF NOT EXISTS current_term VARCHAR(20) DEFAULT 'Term 1'
@@ -896,11 +787,6 @@ def init_db():
         WHERE id = 1
           AND current_year IS NULL
     """)
-
-
-
-
-
 
 
 # AUTHORIZATION LOGS
@@ -1397,7 +1283,7 @@ def stores_mark_notifications_read():
     return mark_notifications_read()
 # ==================== GRADING HELPERS ====================
 
-def get_grade_and_descriptor(percentage):
+def get_grade_and_aggregate(percentage):
     db = get_db()
     cur = db.cursor()
     cur.execute(
@@ -1414,33 +1300,9 @@ def get_grade_and_descriptor(percentage):
     cur.close()
 
     if result:
-        return result['grade'], result['descriptor']
+        return result['grade'], result['aggregate']
 
     return None, None
-
-def generate_qr_token():
-    return str(uuid.uuid4())
-
-def get_identifier(total_score):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT identifier
-        FROM identifier_grading
-        WHERE %s BETWEEN min_value AND max_value
-        ORDER BY min_value DESC
-        LIMIT 1
-        """,
-        (total_score,)
-    )
-    result = cur.fetchone()
-    cur.close()
-
-    if result:
-        return result['identifier']
-
-    return None
 
 # =========================================================
 # A-LEVEL CLASS TEACHER COMMENT
@@ -1676,11 +1538,11 @@ def teacher_has_class_access(user_id, pupil_class, assignment_type=None):
 
     Rules:
 
-        Assignment S.1  -> S.1A, S.1B, S.1C
-        Assignment S.2  -> S.2A, S.2B, S.2C
+        Assignment P.1  -> P.1A, P.1B, P.1C
+        Assignment P.2  -> P.2A, P.2B, P.2C
 
-        Assignment S.1B -> S.1B only
-        Assignment S.1C -> S.1C only
+        Assignment P.1B -> P.1B only
+        Assignment P.1C -> P.1C only
     """
 
     if not user_id or not pupil_class:
@@ -1728,9 +1590,9 @@ def get_teacher_accessible_classes(user_id=None, assignment_type=None):
     Returns the classes assigned to the teacher.
 
     Assignments are kept at the main-class level where possible,
-    e.g. S.1, S.2, S.3.
+    e.g. P.1, P.2, P.3.
 
-    The actual pupils can still be stored as S.1A, S.1B, etc.
+    The actual pupils can still be stored as P.1A, P.1B, etc.
     """
 
     return get_user_classes(
@@ -1848,7 +1710,6 @@ def apply_pupil_fee_structure(
             SELECT
                 pupil_id,
                 class,
-                programme,
                 residence
             FROM pupils
             WHERE pupil_id = %s
@@ -1879,11 +1740,7 @@ def apply_pupil_fee_structure(
         # Primary-school fees use one general programme. Keep the
         # existing database columns so older installations can migrate
         # without a destructive schema change.
-        programme = (pupil['programme'] or 'General').strip() or 'General'
         residence = (pupil['residence'] or 'Day').strip() or 'Day'
-
-        if programme not in ('General', 'Day', 'Boarding'):
-            programme = 'General'
 
         if residence not in ('Day', 'Boarding'):
             residence = 'Day'
@@ -1897,13 +1754,11 @@ def apply_pupil_fee_structure(
                 amount
             FROM pupil_fee_structure
             WHERE level = %s
-            AND programme = %s
             AND residence = %s
             AND term = %s
             AND year = %s
         """, (
             level,
-            programme,
             residence,
             term,
             year
@@ -1915,7 +1770,6 @@ def apply_pupil_fee_structure(
 
             return False, (
                 f'No fee structure found for '
-                f'{level} - {programme} - '
                 f'{residence} - {term} - {year}.'
             )
 
@@ -2728,246 +2582,9 @@ def nssf_paye_settings():
 
     return render_template('admin/nssf_paye_settings.html',settings=settings)
 
-# ==================== ADMISSION PORTAL ROUTES ====================
-def extract_results_from_pdf(file_path):
-    return {'english': 75, 'math': 68, 'science': 82, 'social_studies': 70, 'average': 73.75, 'qualifies': True}
 
-def determine_admission_worth(results):
-    min_average = 60
-    min_english = 50
-    min_math = 50
-    qualifies = (results.get('average', 0) >= min_average and results.get('english', 0) >= min_english and results.get('math', 0) >= min_math)
-    return {'qualifies': qualifies, 'average': results.get('average', 0), 'message': 'Congratulations! You qualify.' if qualifies else 'Sorry, you do not meet requirements.'}
-
-def generate_admission_letter(pupil):
-    return f"""<!DOCTYPE html><html><head><title>Admission Letter</title></head><body><h2>Admission Letter</h2><p>Dear {pupil['full_name']},</p><p>You have been admitted.</p></body></html>"""
-
-@app.route('/admissions', methods=['GET', 'POST'])
-def admissions_portal():
-    cur = get_db().cursor()
-    cur.execute("SELECT is_open, deadline, closing_reason FROM admission_settings WHERE id=1")
-    settings = cur.fetchone()
-    cur.close()
-
-    is_open = settings[0] if settings else 1
-    deadline = settings[1] if settings else None
-    closing_reason = settings[2] if settings else ''
-
-    if not is_open:
-        return render_template('admissions/closed.html', reason=closing_reason, deadline=deadline)
-
-    if request.method == 'POST':
-        full_name = sanitize_input(request.form['full_name'].strip())
-        date_of_birth = request.form['date_of_birth']
-        sex = request.form['sex']
-        preferred_house = request.form['preferred_house']
-        disability = request.form.get('disability', '')
-        sports_activities = request.form.getlist('sports_activities')
-        lin = request.form['lin']
-        phone = request.form['phone']
-        email = request.form['email']
-
-        birth_date = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
-        age = calculate_age(birth_date)
-
-        photo = request.files.get('photo')
-        photo_filename = None
-
-        if photo and photo.filename:
-            ext = photo.filename.rsplit('.', 1)[1].lower()
-            pupil_id_temp = f"TEMP-{int(datetime.now().timestamp())}"
-            photo_filename = f"{pupil_id_temp}.{ext}"
-            photo.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
-
-        results_file = request.files.get('results_pdf')
-        results_data = None
-
-        if results_file and results_file.filename:
-            filename = secure_filename(f"results_{int(datetime.now().timestamp())}_{results_file.filename}")
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            results_file.save(filepath)
-            results_data = extract_results_from_pdf(filepath)
-
-        qualification = determine_admission_worth(results_data) if results_data else {
-            'qualifies': False,
-            'message': 'Results not uploaded'
-        }
-
-        session['admission_data'] = {
-            'full_name': full_name,
-            'date_of_birth': date_of_birth,
-            'age': age,
-            'sex': sex,
-            'preferred_house': preferred_house,
-            'disability': disability,
-            'sports_activities': ','.join(sports_activities),
-            'lin': lin,
-            'phone': phone,
-            'email': email,
-            'photo_filename': photo_filename,
-            'qualification': qualification,
-            'results_data': results_data
-        }
-
-        if qualification['qualifies']:
-            return redirect(url_for('admission_payment'))
-        else:
-            flash(qualification['message'], 'danger')
-            return redirect(url_for('admissions_portal'))
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute("SELECT name FROM houses ORDER BY name")
-    houses = cur.fetchall()
-
-    cur.execute("SELECT name FROM sports_activities ORDER BY name")
-    sports = cur.fetchall()
-
-    cur.close()
-
-    return render_template('admissions/apply.html', houses=houses, sports=sports)
-
-
-@app.route('/admissions/payment', methods=['GET', 'POST'])
-def admission_payment():
-    admission_data = session.get('admission_data')
-
-    if not admission_data:
-        flash('Please complete the application form first.', 'warning')
-        return redirect(url_for('admissions_portal'))
-
-    cur = get_db().cursor()
-    cur.execute("SELECT is_open, fee_amount FROM admission_settings WHERE id=1")
-    settings = cur.fetchone()
-    cur.close()
-
-    if not settings or settings[0] == 0:
-        flash('Online admissions are currently closed.', 'danger')
-        return redirect(url_for('admissions_portal'))
-
-    amount = settings[1] if settings else 50000
-
-    if request.method == 'POST':
-        phone_number = request.form['phone_number']
-        transaction_ref = f"ADM-{int(datetime.now().timestamp())}"
-
-        result = request_momo_payment(phone_number, amount, transaction_ref)
-
-        if result['success']:
-            session['payment_data'] = {
-                'transaction_id': result['transaction_id'],
-                'amount': amount,
-                'phone': phone_number,
-                'reference': transaction_ref
-            }
-
-            temp_pupil_id = f"TEMP-{int(datetime.now().timestamp())}"
-
-            execute_db("""
-                INSERT INTO pupils (
-                    pupil_id,
-                    full_name,
-                    class,
-                    parent_phone,
-                    date_of_birth,
-                    age,
-                    sex,
-                    preferred_house,
-                    disability,
-                    sports_activities,
-                    lin,
-                    admission_source,
-                    admission_status,
-                    payment_status,
-                    payment_transaction_id
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'online','pending','pending',%s)
-            """,
-            (
-                temp_pupil_id,
-                admission_data['full_name'],
-                'Pending',
-                admission_data.get('phone'),
-                admission_data.get('date_of_birth'),
-                admission_data.get('age'),
-                admission_data.get('sex'),
-                admission_data.get('preferred_house'),
-                admission_data.get('disability'),
-                admission_data.get('sports_activities'),
-                admission_data.get('lin'),
-                result['transaction_id']
-            ))
-
-            flash('Payment request sent! Please check your phone and complete the payment.', 'info')
-
-            return redirect(url_for(
-                'admission_payment_status',
-                transaction_id=result['transaction_id']
-            ))
-
-        else:
-            flash(result['message'], 'danger')
-            return redirect(url_for('admission_payment'))
-
-    return render_template(
-        'admissions/payment.html',
-        amount=amount,
-        pupil_name=admission_data['full_name']
-    )
-
-
-@app.route('/admissions/payment/status/<transaction_id>')
-def admission_payment_status(transaction_id):
-
-    status = check_payment_status(transaction_id)
-
-    if status == 'successful':
-
-        cur = get_db().cursor()
-
-        cur.execute("""
-            UPDATE pupils
-            SET payment_status='completed',
-                payment_date=CURRENT_TIMESTAMP,
-                admission_status='pending'
-            WHERE payment_transaction_id=%s
-        """,(transaction_id,))
-
-        get_db().commit()
-        cur.close()
-
-        flash('Payment confirmed! Your application is pending review by the admissions office.', 'success')
-
-        return redirect(url_for('admission_submitted'))
-
-    elif status == 'failed':
-
-        flash('Payment failed. Please try again.', 'danger')
-
-        return redirect(url_for('admission_payment'))
-
-    else:
-        return render_template(
-            'admissions/payment_pending.html',
-            transaction_id=transaction_id
-        )
-
-
-@app.route('/admissions/submitted')
-def admission_submitted():
-
-    admission_data = session.get('admission_data')
-
-    if not admission_data:
-        return redirect(url_for('admissions_portal'))
-
-    return render_template(
-        'admissions/submitted.html',
-        data=admission_data
-    )
 # ==================== DOS MODULE ====================
-SCHOOL_ABBR = "ASS"
+SCHOOL_ABBR = "EPS"
 def generate_pupil_id():
     return generate_unique_number(SCHOOL_ABBR, 'pupils', 'pupil_id', year_format=True)
 
@@ -3101,7 +2718,6 @@ def dos_admit():
             birth_date = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
             age = calculate_age(birth_date)
         pupil_id = generate_pupil_id()
-        qr_token = generate_qr_token()
 
         photo_filename = "default_avatar.png"
         if photo and photo.filename and allowed_file(photo.filename, ALLOWED_IMAGE_EXTENSIONS):
@@ -3110,41 +2726,15 @@ def dos_admit():
             photo.save(
                 os.path.join(app.config['UPLOAD_FOLDER'], photo_filename)
             )
-        
-        # ================= SAVE PUPIL SIGNATURE (OPTIONAL) =================
-        pupil_signature_file = request.files.get('pupil_signature')
-        
-        signature_filename = None
-        
-        if (
-            pupil_signature_file
-            and pupil_signature_file.filename
-            and allowed_file(
-                pupil_signature_file.filename,
-                ALLOWED_IMAGE_EXTENSIONS
-            )
-        ):
-            signature_ext = (
-                pupil_signature_file.filename.rsplit('.', 1)[1].lower()
-            )
-        
-            signature_filename = f"pupil_signature_{pupil_id}.{signature_ext}"
-        
-            pupil_signature_file.save(
-                os.path.join(
-                    app.config['UPLOAD_FOLDER'],
-                    signature_filename
-                )
-            )
         try:
             execute_db(
                 """
                 INSERT INTO pupils
                 (
-                    pupil_id, qr_token,
+                    pupil_id, 
                     full_name,
                     class,
-                    photo_path,signature_filename,
+                    photo_path,
                     fees_paid,
                     fees_balance,
                     admission_date,
@@ -3161,7 +2751,7 @@ def dos_admit():
                 )
                 VALUES
                 (
-                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,
                     0,0,
                     CURRENT_DATE,
                     %s,%s,%s,%s,%s,%s,%s,%s,
@@ -3170,10 +2760,10 @@ def dos_admit():
                 )
                 """,
                 (
-                    pupil_id, qr_token,
+                    pupil_id,
                     full_name,
                     class_name,
-                    photo_filename, signature_filename,
+                    photo_filename, 
                     parent_phone,
                     date_of_birth,
                     age,
@@ -3202,90 +2792,7 @@ def dos_admit():
     )
 
 
-@app.route('/dos/admission_settings', methods=['GET', 'POST'])
-def dos_admission_settings():
 
-    if not check_permission(['dos']):
-        abort(403)
-
-    if request.method == 'POST':
-
-        is_open = 1 if request.form.get('is_open') == 'on' else 0
-        deadline = request.form.get('deadline') or None
-        closing_reason = request.form.get('closing_reason', '')
-        fee_amount = float(request.form.get('fee_amount', 50000))
-
-        execute_db(
-            """
-            UPDATE admission_settings
-            SET
-                is_open=%s,
-                deadline=%s,
-                closing_reason=%s,
-                fee_amount=%s,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE id=1
-            """,
-            (
-                is_open,
-                deadline,
-                closing_reason,
-                fee_amount
-            )
-        )
-
-        flash(
-            'Admission settings updated successfully.',
-            'success'
-        )
-
-        return redirect(url_for('dos_admission_settings'))
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT 
-            is_open,
-            deadline,
-            closing_reason,
-            fee_amount
-        FROM admission_settings
-        WHERE id=1
-        """
-    )
-
-    settings = cur.fetchone()
-
-    cur.execute(
-        """
-        SELECT
-            pupil_id,
-            full_name,
-            lin,
-            application_date
-        FROM pupils
-        WHERE admission_source='online'
-        AND admission_status='pending'
-        ORDER BY application_date DESC
-        """
-    )
-
-    pending = cur.fetchall()
-
-    cur.close()
-
-    return render_template(
-        'dos/admission_settings.html',
-        settings=settings,
-        pending=pending,
-        is_open=settings['is_open'] if settings else 1,
-        deadline=settings['deadline'] if settings else '',
-        closing_reason=settings['closing_reason'] if settings else '',
-        fee_amount=settings['fee_amount'] if settings else 50000
-    )
-    
 def generate_unique_number(prefix, table, column, year_format=False):
     db = get_db_dict()
     cur = db.cursor()
@@ -3333,242 +2840,6 @@ def generate_unique_number(prefix, table, column, year_format=False):
 
     return f"{prefix}-{number:04d}"
 
-@app.route('/dos/pending_admissions')
-@login_required
-def dos_pending_admissions():
-
-    if not check_permission(['dos', 'admin']):
-        abort(403)
-
-    cur = get_db().cursor()
-
-    cur.execute("""
-        SELECT
-            pupil_id,
-            full_name,
-            sex,
-            age,
-            parent_phone,
-            admission_status,
-            payment_status,
-            admission_source
-        FROM pupils
-        WHERE admission_source='online'
-          AND admission_status='pending'
-        ORDER BY pupil_id DESC
-    """)
-
-    applications = cur.fetchall()
-
-    cur.close()
-
-    return render_template(
-        'dos/pending_admissions.html',
-        applications=applications
-    )
-    
-@app.route('/dos/approve_admission/<pupil_id>', methods=['GET','POST'])
-@login_required
-def approve_admission(pupil_id):
-
-    if not check_permission(['dos','admin']):
-        abort(403)
-
-    db = get_db()
-    cur = db.cursor()
-
-    # Get applicant
-    cur.execute("""
-        SELECT *
-        FROM pupils
-        WHERE pupil_id=%s
-    """,(pupil_id,))
-
-    pupil = cur.fetchone()
-
-    if not pupil:
-        cur.close()
-        flash("Pupil application not found.", "danger")
-        return redirect(url_for('dos_pending_admissions'))
-
-
-    if request.method == 'POST':
-
-        assigned_class = request.form.get('class')
-
-
-        if not assigned_class:
-            flash("Please select a class.", "warning")
-            return redirect(request.url)
-
-
-        new_pupil_id = generate_pupil_id()
-
-
-        cur.execute("""
-            INSERT INTO pupils(
-                pupil_id,
-                full_name,
-                class,
-                photo_path,
-                fees_paid,
-                fees_balance,
-                fees_total,
-                admission_date,
-                parent_phone,
-                date_of_birth,
-                age,
-                sex,
-                preferred_house,
-                disability,
-                sports_activities,
-                lin,
-                admission_source,
-                admission_status,
-                payment_status,
-                payment_transaction_id,
-                payment_date
-            )
-            VALUES(
-                %s,%s,%s,%s,%s,%s,%s,
-                CURRENT_DATE,
-                %s,%s,%s,%s,%s,%s,%s,%s,
-                'online',
-                'approved',
-                'completed',
-                %s,
-                %s
-            )
-        """,
-        (
-            new_pupil_id,
-            pupil['full_name'],
-            assigned_class,
-            pupil['photo_path'],
-            pupil['fees_paid'],
-            pupil['fees_balance'],
-            pupil['fees_total'],
-            pupil['parent_phone'],
-            pupil['date_of_birth'],
-            pupil['age'],
-            pupil['sex'],
-            pupil['preferred_house'],
-            pupil['disability'],
-            pupil['sports_activities'],
-            pupil['lin'],
-            pupil['payment_transaction_id'],
-            pupil['payment_date']
-        ))
-
-
-        # Delete temporary application
-        cur.execute("""
-            DELETE FROM pupils
-            WHERE pupil_id=%s
-        """,(pupil_id,))
-
-
-        db.commit()
-        cur.close()
-
-
-        flash(
-            f"Pupil approved. New ID: {new_pupil_id}",
-            "success"
-        )
-
-        return redirect(url_for('dos_pending_admissions'))
-
-
-    # Load classes
-    cur.execute("""
-        SELECT name
-        FROM classes
-        ORDER BY name
-    """)
-
-    classes = cur.fetchall()
-
-    cur.close()
-
-
-    return render_template(
-        'dos/approve_admission.html',
-        pupil=pupil,
-        classes=classes
-    )
-
-# ==================== REJECT ONLINE ADMISSION ====================
-
-@app.route('/dos/reject_admission/<pupil_id>')
-@login_required
-def reject_admission(pupil_id):
-
-    if not check_permission(['dos','admin']):
-        abort(403)
-
-    db = get_db()
-    cur = db.cursor()
-
-    # Check applicant exists
-    cur.execute("""
-        SELECT full_name, admission_status
-        FROM pupils
-        WHERE pupil_id=%s
-    """,(pupil_id,))
-
-    pupil = cur.fetchone()
-
-
-    if not pupil:
-        cur.close()
-        flash("Pupil application not found.", "danger")
-        return redirect(url_for('dos_pending_admissions'))
-    # Update status
-    cur.execute("""
-        UPDATE pupils
-        SET admission_status='rejected'
-        WHERE pupil_id=%s
-    """,(pupil_id,))
-
-
-    db.commit()
-    cur.close()
-
-
-    flash(
-        f"Admission application for {pupil['full_name']} rejected.",
-        "warning"
-    )
-    return redirect(url_for('dos_pending_admissions'))
-# ==================== ADMISSION LETTER ====================
-
-@app.route('/admission_letter/<pupil_id>')
-@login_required
-def admission_letter(pupil_id):
-    cur = get_db().cursor()
-    cur.execute("""
-        SELECT 
-            pupil_id,
-            full_name,
-            class,
-            admission_date,
-            preferred_house
-        FROM pupils
-        WHERE pupil_id=%s
-        AND admission_status='approved'
-    """,(pupil_id,))
-
-    pupil = cur.fetchone()
-
-    cur.close()
-    if not pupil:
-        flash("Admission record not found.", "danger")
-        return redirect(url_for('dashboard'))
-    return render_template(
-        'admissions/admission_letter.html',
-        pupil=pupil
-    )
 
 @app.route('/dos/class_lists')
 def dos_class_lists():
@@ -3647,45 +2918,7 @@ def dos_class_lists():
         term=term
     )
 
-@app.route('/dos/enroll_face/<pupil_id>')
-def dos_enroll_face(pupil_id):
 
-    if not check_permission(['dos']):
-        abort(403)
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            photo_path,
-            face_descriptor
-        FROM pupils
-        WHERE pupil_id = %s
-        """,
-        (pupil_id,)
-    )
-
-    pupil = cur.fetchone()
-
-    cur.close()
-
-    if not pupil:
-        flash('Pupil not found.', 'danger')
-        return redirect(url_for('dos_class_lists'))
-
-    pupil['photo_url'] = get_photo_url(
-        pupil.get('photo_path')
-    )
-
-    return render_template(
-        'dos/enroll_face.html',
-        pupil=pupil
-    )
 # ==================== DOS TEACHER ASSIGNMENTS ====================
 
 @app.route('/dos/teacher_assignments', methods=['GET', 'POST'])
@@ -4189,546 +3422,8 @@ def dos_promote():
     )
 
 
-# ==================== ATTENDANCE ====================
 
-@app.route('/dos/schedules', methods=['GET', 'POST'])
-def dos_schedules():
 
-    if not check_permission(['dos']):
-        abort(403)
-    if request.method == 'POST':
-
-        schedule_type = request.form['schedule_type']
-        term_scope = request.form['term_scope']
-        content = request.form.get(
-            'schedule_text',
-            ''
-        ).strip()
-
-        file = request.files.get('schedule_file')
-
-        final_content = content
-
-
-        if file and file.filename and allowed_file(
-            file.filename,
-            {'csv'}
-        ):
-            stream = io.StringIO(
-                file.stream.read().decode("UTF8"),
-                newline=None
-            )
-            reader = csv.reader(stream)
-            rows = []
-            for row in reader:
-                if any(row):
-                    rows.append(
-                        ",".join(
-                            [
-                                escape(cell.strip())
-                                for cell in row
-                            ]
-                        )
-                    )
-
-            final_content = "\n".join(rows)
-        execute_db(
-            """
-            INSERT INTO schedules
-            (
-                type,
-                term_scope,
-                content,
-                updated_at
-            )
-            VALUES
-            (%s,%s,%s,CURRENT_TIMESTAMP)
-
-            ON CONFLICT(type,term_scope)
-
-            DO UPDATE SET
-                content=EXCLUDED.content,
-                updated_at=CURRENT_TIMESTAMP
-            """,
-            (
-                schedule_type,
-                term_scope,
-                final_content
-            )
-        )
-        flash(
-            f'{schedule_type.capitalize()} saved.',
-            'success'
-        )
-        return redirect(
-            url_for('dos_schedules')
-        )
-    db = get_db_dict()
-    cur = db.cursor()
-    cur.execute(
-        """
-        SELECT
-            type,
-            term_scope,
-            content,
-            updated_at
-        FROM schedules
-        ORDER BY type, term_scope DESC
-        """
-    )
-
-    schedules = cur.fetchall()
-    cur.close()
-    return render_template(
-        'dos/schedules.html',
-        schedules=schedules
-    )
-
-def get_olevel_grade_details(score):
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT grade, descriptor
-        FROM grading_system
-        WHERE %s BETWEEN min_score AND max_score
-        LIMIT 1
-        """,
-        (score,)
-    )
-
-    result = cur.fetchone()
-
-    cur.close()
-
-    if result:
-        return (
-            result['grade'],
-            result['descriptor']
-        )
-
-    return (
-        '-',
-        '-'
-    )
-
-# ==================== O-LEVEL GRADING MANAGEMENT ====================
-
-@app.route('/dos/olevel_grading', methods=['GET', 'POST'])
-def dos_olevel_grading():
-
-    if not check_permission(['dos']):
-        abort(403)
-
-    if request.method == 'POST':
-
-        file = request.files.get('grading_file')
-
-        if not file or not file.filename:
-            flash(
-                'Please upload an Excel file.',
-                'danger'
-            )
-            return redirect(
-                url_for('dos_olevel_grading')
-            )
-
-        try:
-
-            from openpyxl import load_workbook
-
-            wb = load_workbook(
-                file,
-                data_only=True
-            )
-
-            sheet = wb.active
-
-            headers = [
-                str(cell.value).strip().lower()
-                if cell.value else ''
-                for cell in sheet[1]
-            ]
-
-            cols = {}
-
-            for idx, header in enumerate(headers):
-
-                if header in [
-                    'min_score',
-                    'max_score',
-                    'grade',
-                    'descriptor'
-                ]:
-                    cols[header] = idx
-
-
-            required = [
-                'min_score',
-                'max_score',
-                'grade',
-                'descriptor'
-            ]
-
-            if not all(
-                item in cols
-                for item in required
-            ):
-
-                flash(
-                    'Missing required columns: min_score, max_score, grade, descriptor',
-                    'danger'
-                )
-
-                return redirect(
-                    url_for('dos_olevel_grading')
-                )
-
-
-            execute_db(
-                "DELETE FROM grading_system"
-            )
-
-
-            count = 0
-
-
-            for row_idx in range(
-                2,
-                sheet.max_row + 1
-            ):
-
-                min_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['min_score'] + 1
-                ).value
-
-                max_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['max_score'] + 1
-                ).value
-
-                grade_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['grade'] + 1
-                ).value
-
-                desc_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['descriptor'] + 1
-                ).value
-
-
-                if None in [
-                    min_val,
-                    max_val,
-                    grade_val
-                ]:
-                    continue
-
-
-                try:
-
-                    execute_db(
-                        """
-                        INSERT INTO grading_system
-                        (
-                            min_score,
-                            max_score,
-                            grade,
-                            descriptor
-                        )
-                        VALUES
-                        (%s,%s,%s,%s)
-                        """,
-                        (
-                            float(min_val),
-                            float(max_val),
-                            str(grade_val).strip(),
-                            str(desc_val).strip()
-                            if desc_val else ''
-                        )
-                    )
-
-                    count += 1
-
-
-                except Exception:
-
-                    continue
-
-
-            flash(
-                f'{count} O-Level grading rules uploaded.',
-                'success'
-            )
-
-
-        except Exception as e:
-
-            flash(
-                f'Error: {str(e)}',
-                'danger'
-            )
-
-
-        return redirect(
-            url_for('dos_olevel_grading')
-        )
-
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT
-            min_score,
-            max_score,
-            grade,
-            descriptor
-        FROM grading_system
-        ORDER BY min_score DESC
-        """
-    )
-
-    rules = cur.fetchall()
-
-    cur.close()
-
-
-    return render_template(
-        'dos/olevel_grading.html',
-        rules=rules
-    )
-
-
-
-# ==================== A-LEVEL GRADING MANAGEMENT ====================
-
-@app.route('/dos/alevel_grading', methods=['GET', 'POST'])
-def dos_alevel_grading():
-
-    if not check_permission(['dos']):
-        abort(403)
-
-    if request.method == 'POST':
-
-        file = request.files.get('grading_file')
-
-        if not file or not file.filename:
-            flash(
-                'Please upload an Excel file.',
-                'danger'
-            )
-            return redirect(
-                url_for('dos_alevel_grading')
-            )
-
-        try:
-            from openpyxl import load_workbook
-
-            wb = load_workbook(
-                file,
-                data_only=True
-            )
-
-            sheet = wb.active
-
-            headers = [
-                str(cell.value).strip().lower()
-                if cell.value else ''
-                for cell in sheet[1]
-            ]
-
-            cols = {}
-
-            for idx, header in enumerate(headers):
-
-                if header in [
-                    'min_score',
-                    'max_score',
-                    'grade',
-                    'points'
-                ]:
-                    cols[header] = idx
-
-            required = [
-                'min_score',
-                'max_score',
-                'grade',
-                'points'
-            ]
-
-            if not all(
-                item in cols
-                for item in required
-            ):
-
-                flash(
-                    'Missing required columns: min_score, max_score, grade, points',
-                    'danger'
-                )
-
-                return redirect(
-                    url_for('dos_alevel_grading')
-                )
-
-            # Remove existing MAIN A-Level grading rules.
-            # is_subsidiary = 0 means normal/main grading.
-            execute_db(
-                """
-                DELETE FROM alevel_grading
-                WHERE is_subsidiary = 0
-                """
-            )
-
-            count = 0
-
-            for row_idx in range(
-                2,
-                sheet.max_row + 1
-            ):
-
-                min_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['min_score'] + 1
-                ).value
-
-                max_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['max_score'] + 1
-                ).value
-
-                grade_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['grade'] + 1
-                ).value
-
-                points_val = sheet.cell(
-                    row=row_idx,
-                    column=cols['points'] + 1
-                ).value
-
-                if None in [
-                    min_val,
-                    max_val,
-                    grade_val,
-                    points_val
-                ]:
-                    continue
-
-                try:
-
-                    execute_db(
-                        """
-                        INSERT INTO alevel_grading
-                        (
-                            min_score,
-                            max_score,
-                            grade,
-                            points,
-                            is_subsidiary
-                        )
-                        VALUES
-                        (%s, %s, %s, %s, 0)
-                        """,
-                        (
-                            float(min_val),
-                            float(max_val),
-                            str(grade_val).strip(),
-                            int(points_val)
-                        )
-                    )
-
-                    count += 1
-
-                except Exception:
-                    continue
-
-            flash(
-                f'{count} A-Level grading rules uploaded.',
-                'success'
-            )
-
-        except Exception as e:
-
-            flash(
-                f'Error: {str(e)}',
-                'danger'
-            )
-
-        return redirect(
-            url_for('dos_alevel_grading')
-        )
-
-    # --------------------------------------------------
-    # DISPLAY MAIN A-LEVEL GRADING RULES
-    # --------------------------------------------------
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    cur.execute(
-        """
-        SELECT
-            min_score,
-            max_score,
-            grade,
-            points
-        FROM alevel_grading
-        WHERE is_subsidiary = 0
-        ORDER BY min_score DESC
-        """
-    )
-
-    rules = cur.fetchall()
-
-    cur.close()
-
-    return render_template(
-        'dos/alevel_grading.html',
-        rules=rules
-    )
-
-@app.route('/dos/predefined_comments')
-def dos_predefined_comments():
-    if not check_permission(['dos']):
-        abort(403)
-    db = get_db_dict()
-    cur = db.cursor()
-    cur.execute("SELECT * FROM predefined_comments ORDER BY comment_type, id")
-    comments = cur.fetchall()
-    cur.close()
-    return render_template('dos/predefined_comments.html', comments=comments)
-
-@app.route('/dos/predefined_comments/add', methods=['POST'])
-def dos_predefined_comments_add():
-    if not check_permission(['dos']):
-        abort(403)
-    comment_type = request.form['comment_type']
-    comment_text = request.form['comment_text'].strip()
-    if not comment_text:
-        flash('Comment text is required.', 'danger')
-        return redirect(url_for('dos_predefined_comments'))
-    execute_db(
-        "INSERT INTO predefined_comments (comment_type, comment_text, is_active) VALUES (%s, %s, %s)",
-        (comment_type, comment_text, True)
-    )
-    flash('Comment added successfully.', 'success')
-    return redirect(url_for('dos_predefined_comments'))
-
-@app.route('/dos/predefined_comments/delete/<int:comment_id>')
-def dos_predefined_comments_delete(comment_id):
-    if not check_permission(['dos']):
-        abort(403)
-    execute_db(
-        "DELETE FROM predefined_comments WHERE id=%s",
-        (comment_id,)
-    )
-    flash('Comment deleted successfully.', 'success')
-    return redirect(url_for('dos_predefined_comments'))
 
 @app.route('/dos/upload_teachers', methods=['GET', 'POST'])
 def dos_upload_teachers():
@@ -4938,14 +3633,14 @@ def assign_user_to_class(
     """
     Assign a teacher to a class.
 
-    Main classes such as S.1, S.2, S.3 are stored exactly as assigned.
+    Main classes such as P.1, P.2, P.3 are stored exactly as assigned.
 
     A main-class assignment automatically covers its streams:
 
-        S.1  -> S.1A, S.1B, S.1C
-        S.2  -> S.2A, S.2B, S.2C
+        P.1  -> P.1A, P.1B, P.1C
+        P.2  -> P.2A, P.2B, P.2C
 
-    A specific stream assignment such as S.1A only covers S.1A.
+    A specific stream assignment such as P.1A only covers P.1A.
     """
 
     db = None
@@ -5451,72 +4146,7 @@ def teacher_pupils():
         term=term
     )
     
-@app.route('/dos/save_face_descriptor', methods=['POST'])
-def dos_save_face_descriptor():
 
-    if not check_permission(['dos']):
-        abort(403)
-
-    data = request.get_json(silent=True) or {}
-
-    pupil_id = (data.get('pupil_id') or '').strip()
-    descriptor = data.get('descriptor')
-
-    if not pupil_id:
-        return jsonify({
-            'success': False,
-            'message': 'Pupil ID is required.'
-        }), 400
-
-    if not isinstance(descriptor, list) or len(descriptor) != 128:
-        return jsonify({
-            'success': False,
-            'message': 'Invalid face descriptor.'
-        }), 400
-
-    try:
-        descriptor_json = json.dumps(descriptor)
-
-        db = get_db_dict()
-        cur = db.cursor()
-
-        cur.execute(
-            """
-            UPDATE pupils
-            SET face_descriptor = %s
-            WHERE pupil_id = %s
-            """,
-            (descriptor_json, pupil_id)
-        )
-
-        if cur.rowcount == 0:
-            db.rollback()
-            cur.close()
-
-            return jsonify({
-                'success': False,
-                'message': 'Pupil not found.'
-            }), 404
-
-        db.commit()
-        cur.close()
-
-        return jsonify({
-            'success': True,
-            'message': 'Face enrolled successfully.'
-        })
-
-    except Exception as e:
-
-        try:
-            db.rollback()
-        except Exception:
-            pass
-
-        return jsonify({
-            'success': False,
-            'message': str(e)
-        }), 500
 def to_number(value):
     if value is None:
         return 0
@@ -5531,1519 +4161,437 @@ def to_number(value):
         return 0
 
     return float(value)
-
-@app.route('/teacher/upload_marks', methods=['GET', 'POST'])
+    
+@app.route('/teacher/upload_marks', methods=['GET'])
 def teacher_upload_marks():
 
-    if not check_permission(
-        ['classteacher', 'subject_teacher', 'dos']
-    ):
+    if not check_permission([
+        'classteacher',
+        'subject_teacher',
+        'dos'
+    ]):
         abort(403)
 
+    import re
+
     teacher_id = session.get('user_id')
-
-    # =========================================================
-    # GET TEACHER ASSIGNMENTS
-    # =========================================================
-
     assignments = get_user_assignments(teacher_id)
 
     if not assignments:
+        flash('No classes assigned.', 'danger')
+        return redirect(url_for('dashboard'))
 
-        flash(
-            'No classes assigned.',
-            'danger'
-        )
+    # =====================================================
+    # IDENTIFY NURSERY AND PRIMARY CLASSES
+    # =====================================================
 
-        return redirect(
-            url_for('dashboard')
-        )
+    def get_level(class_name):
 
-    # =========================================================
-    # BUILD CLASSES AVAILABLE FOR MARK ENTRY
-    # =========================================================
+        name = re.sub(
+            r'\s+',
+            ' ',
+            (class_name or '').strip()
+        ).upper()
 
-    assigned_classes = set()
+        compact = re.sub(r'[\s.]', '', name)
+
+        # Nursery classes
+        if name in {
+            'BABY', 'BABY CLASS',
+            'MIDDLE', 'MIDDLE CLASS',
+            'TOP', 'TOP CLASS'
+        }:
+            return 'nursery'
+
+        # Primary 1 to Primary 7, including streams
+        if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
+            return 'primary'
+
+        if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
+            return 'primary'
+
+        if re.fullmatch(r'P[1-7][A-Z]*', compact):
+            return 'primary'
+
+        return None
+
+    # =====================================================
+    # FILTER ASSIGNMENTS TO NURSERY AND PRIMARY
+    # =====================================================
+
+    filtered_assignments = []
 
     for assignment in assignments:
 
-        assigned_class = (
-            assignment.get('class_name') or ''
-        ).strip().upper()
+        class_name = (
+            assignment.get('class')
+            or assignment.get('class_name')
+            or ''
+        ).strip()
 
-        if not assigned_class:
-            continue
+        level = get_level(class_name)
 
-        assigned_classes.add(
-            assigned_class
-        )
+        if level:
+            assignment['level'] = level
+            assignment['class_name'] = class_name
+            filtered_assignments.append(assignment)
 
-    # =========================================================
-    # EXPAND STREAM ASSIGNMENTS
-    #
-    # Example:
-    # S.5A -> S.5A, S.5B, S.5C...
-    # S.1B -> S.1A, S.1B, S.1C...
-    # =========================================================
-
-    upload_classes = set(
-        assigned_classes
-    )
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    for assigned_class in assigned_classes:
-
-        match = re.match(
-            r'^(S\.\d+)([A-Z]+)?$',
-            assigned_class
-        )
-
-        if not match:
-            continue
-
-        parent_class = match.group(1)
-
-        cur.execute(
-            """
-            SELECT DISTINCT class
-            FROM pupils
-            WHERE class ~ %s
-            ORDER BY class
-            """,
-            (
-                '^' +
-                re.escape(parent_class) +
-                r'[A-Za-z]+$',
-            )
-        )
-
-        stream_rows = cur.fetchall()
-
-        for row in stream_rows:
-
-            stream_class = (
-                row['class'] or ''
-            ).strip().upper()
-
-            if stream_class:
-
-                upload_classes.add(
-                    stream_class
-                )
-
-    # =========================================================
-    # FINAL AVAILABLE CLASSES
-    # =========================================================
-
-    available_classes = sorted(
-        upload_classes
-    )
-
-    if not available_classes:
-
-        cur.close()
-        db.close()
-
+    if not filtered_assignments:
         flash(
-            'No classes assigned.',
-            'danger'
+            'You have no Nursery or Primary classes assigned.',
+            'warning'
         )
+        return redirect(url_for('dashboard'))
 
-        return redirect(
-            url_for('dashboard')
-        )
-
-    # =========================================================
-    # SELECT CLASS
-    # =========================================================
+    # =====================================================
+    # GET SELECTED CLASS AND SUBJECT
+    # =====================================================
 
     selected_class = request.args.get(
-        'class_name',
-        session.get(
-            'selected_class',
-            available_classes[0]
-        )
-    )
-
-    selected_class = (
-        selected_class.strip().upper()
-        if selected_class
-        else available_classes[0]
-    )
-
-    # Make sure class is allowed
-    if selected_class not in available_classes:
-
-        selected_class = (
-            available_classes[0]
-        )
-
-    # Remember selected class
-    session['selected_class'] = (
-        selected_class
-    )
-
-    # =========================================================
-    # SELECT TERM
-    #
-    # The teacher can choose Term 1, Term 2 or Term 3.
-    # The selected term is remembered.
-    # =========================================================
-
-    allowed_terms = [
-        'Term 1',
-        'Term 2',
-        'Term 3'
-    ]
-
-    selected_term = request.args.get(
-        'term',
-        session.get(
-            'selected_term',
-            'Term 1'
-        )
-    )
-
-    if selected_term not in allowed_terms:
-
-        selected_term = 'Term 1'
-
-    # Remember selected term
-    session['selected_term'] = (
-        selected_term
-    )
-
-    # =========================================================
-    # SELECT YEAR
-    #
-    # Year is editable.
-    #
-    # Once changed, it remains selected until the teacher
-    # changes it again.
-    # =========================================================
-
-    current_year = datetime.now().year
-
-    selected_year = request.args.get(
-        'year',
-        session.get(
-            'selected_year',
-            current_year
-        )
-    )
-
-    try:
-
-        selected_year = int(
-            selected_year
-        )
-
-    except (
-        ValueError,
-        TypeError
-    ):
-
-        selected_year = current_year
-
-    # Keep year within reasonable range
-    if (
-        selected_year < 2000
-        or selected_year > 2100
-    ):
-
-        selected_year = current_year
-
-    # Remember selected year
-    session['selected_year'] = (
-        selected_year
-    )
-    
-    
-    # =========================================================
-    # GET SAVED MARKS
-    # =========================================================
-
-    subject = request.args.get(
-        'subject',
-        session.get('selected_subject', '')
+        'class',
+        ''
     ).strip()
-    
-    if subject:
-        session['selected_subject'] = subject
 
-    saved_marks = {}
-    
-    if subject:
-        cur.execute(
-            """
-            SELECT m.*
-            FROM marks AS m
-            JOIN pupils AS s
-              ON s.pupil_id = m.pupil_id
-            WHERE m.subject = %s
-              AND m.term = %s
-              AND m.year = %s
-              AND s.class = %s
-            """,
+    selected_subject = request.args.get(
+        'subject',
+        ''
+    ).strip()
+
+    # Only allow classes present in the teacher's assignments
+    assigned_classes = sorted(set(
+        assignment['class_name']
+        for assignment in filtered_assignments
+    ))
+
+    if selected_class and selected_class not in assigned_classes:
+        flash(
+            'You are not assigned to the selected class.',
+            'danger'
+        )
+        return redirect(url_for('teacher_upload_marks'))
+
+    # Subjects assigned to the selected class
+    if selected_class:
+        available_subjects = sorted(set(
             (
-                subject,
-                selected_term,
-                selected_year,
-                selected_class
+                assignment.get('subject')
+                or assignment.get('subject_name')
+                or ''
+            ).strip()
+            for assignment in filtered_assignments
+            if assignment['class_name'] == selected_class
+            and (
+                assignment.get('subject')
+                or assignment.get('subject_name')
             )
-        )
-    
-        saved_marks = {
-            str(row['pupil_id']): row
-            for row in cur.fetchall()
-        }
-
-    # =========================================================
-    # DETERMINE LEVEL
-    # =========================================================
-
-    class_upper = (
-        selected_class or ''
-    ).strip().upper()
-
-    normalized_class = (
-        class_upper.replace(' ', '')
-    )
-
-    # A-Level
-    if (
-        normalized_class in [
-            'S5',
-            'S6',
-            'A-LEVEL',
-            'ALEVEL'
-        ]
-
-        or re.match(
-            r'^S\.?[56][A-Z]*$',
-            normalized_class
-        )
-    ):
-
-        level = 'alevel'
-
+        ))
     else:
-
-        level = 'olevel'
-
-    # =========================================================
-    # GET PUPILS
-    # =========================================================
-
-    cur.execute(
-        """
-        SELECT
-            pupil_id,
-            full_name
-        FROM pupils
-        WHERE class = %s
-        ORDER BY full_name
-        """,
-        (selected_class,)
-    )
-
-    pupils = cur.fetchall()
-
-    # =========================================================
-    # EXCEL UPLOAD
-    # =========================================================
-
-    if request.method == 'POST':
-
-        subject = request.form.get(
-            'subject',
-            ''
-        ).strip()
-
-        term = request.form.get(
-            'term',
-            selected_term
-        ).strip()
-
-        year = request.form.get(
-            'year',
-            selected_year
-        )
-
-        teacher_initials = request.form.get(
-            'teacher_initials',
-            ''
-        ).strip()
-
-        is_subsidiary = (
-            request.form.get(
-                'is_subsidiary'
-            ) == 'on'
-        )
-
-        # -----------------------------------------------------
-        # VALIDATE TERM
-        # -----------------------------------------------------
-
-        if term not in allowed_terms:
-
-            cur.close()
-            db.close()
-
-            flash(
-                'Invalid term. Please select Term 1, Term 2 or Term 3.',
-                'danger'
+        available_subjects = sorted(set(
+            (
+                assignment.get('subject')
+                or assignment.get('subject_name')
+                or ''
+            ).strip()
+            for assignment in filtered_assignments
+            if (
+                assignment.get('subject')
+                or assignment.get('subject_name')
             )
+        ))
 
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class,
-                    term=selected_term,
-                    year=selected_year
-                )
-            )
+    if selected_subject and selected_subject not in available_subjects:
+        flash(
+            'You are not assigned to the selected subject.',
+            'danger'
+        )
+        return redirect(url_for(
+            'teacher_upload_marks',
+            **({'class': selected_class} if selected_class else {})
+        ))
 
-        # -----------------------------------------------------
-        # VALIDATE YEAR
-        # -----------------------------------------------------
+    # =====================================================
+    # GET PUPILS FOR SELECTED CLASS
+    # =====================================================
+
+    pupils = []
+
+    if selected_class:
+
+        db = get_db_dict()
+        cur = db.cursor()
 
         try:
+            cur.execute("""
+                SELECT
+                    pupil_id,
+                    full_name,
+                    class
+                FROM pupils
+                WHERE class = %s
+                ORDER BY full_name
+            """, (selected_class,))
 
-            year = int(year)
+            pupils = cur.fetchall()
 
-        except (
-            ValueError,
-            TypeError
-        ):
-
-            year = selected_year
-
-        if year < 2000 or year > 2100:
-
+        finally:
             cur.close()
             db.close()
 
-            flash(
-                'Please enter a valid year.',
-                'danger'
-            )
+    # =====================================================
+    # GET CURRENT TERM AND YEAR
+    # =====================================================
 
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class,
-                    term=term,
-                    year=selected_year
-                )
-            )
+    term = request.args.get(
+        'term',
+        'Term 1'
+    ).strip()
 
-        # -----------------------------------------------------
-        # VALIDATE SUBJECT
-        # -----------------------------------------------------
+    year = request.args.get(
+        'year',
+        datetime.now().year,
+        type=int
+    )
 
-        if not subject:
-
-            cur.close()
-            db.close()
-
-            flash(
-                'Please enter the subject.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class,
-                    term=term,
-                    year=year
-                )
-            )
-
-        # -----------------------------------------------------
-        # VALIDATE TEACHER INITIALS
-        # -----------------------------------------------------
-
-        if not teacher_initials:
-
-            cur.close()
-            db.close()
-
-            flash(
-                'Please enter teacher initials.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class,
-                    term=term,
-                    year=year
-                )
-            )
-
-        # -----------------------------------------------------
-        # REMEMBER TERM AND YEAR
-        # -----------------------------------------------------
-
-        session['selected_term'] = term
-        session['selected_year'] = year
-
-        # -----------------------------------------------------
-        # GET FILE
-        # -----------------------------------------------------
-
-        file = request.files.get(
-            'marks_file'
-        )
-
-        if not file or not file.filename:
-
-            cur.close()
-            db.close()
-
-            flash(
-                'Please upload an Excel file.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'teacher_upload_marks',
-                    class_name=selected_class,
-                    term=term,
-                    year=year
-                )
-            )
-
-        # -----------------------------------------------------
-        # PROCESS EXCEL FILE
-        #
-        # IMPORTANT:
-        # process_marks_upload should use the supplied
-        # teacher_initials when saving the uploaded marks.
-        # -----------------------------------------------------
-
-        count = process_marks_upload(
-            file,
-            subject,
-            term,
-            year,
-            selected_class,
-            teacher_id,
-            level,
-            is_subsidiary,
-            teacher_initials
-        )
-
-        flash(
-            f'{count} marks uploaded successfully.',
-            'success'
-        )
-
-        cur.close()
-        db.close()
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=selected_class,
-                term=term,
-                year=year
-            )
-        )
-
-    # =========================================================
-    # CLOSE DATABASE
-    # =========================================================
-
-    cur.close()
-    db.close()
-
-    # =========================================================
-    # RENDER CORRECT TEMPLATE
-    # =========================================================
+    # =====================================================
+    # RENDER MARKS UPLOAD PAGE
+    # =====================================================
 
     return render_template(
-        f'teacher/upload_marks_{level}.html',
-
-        assigned_class=selected_class,
-
-        current_year=selected_year,
-
-        selected_year=selected_year,
-
-        selected_term=selected_term,
-
-        teacher_classes=[
-            {
-                'class_name': c
-            }
-            for c in available_classes
-        ],
-
-        selected_class=selected_class,  subject=subject,
-        saved_marks=saved_marks, 
-        pupils=pupils
+        'teacher/upload_marks.html',
+        assignments=filtered_assignments,
+        classes=assigned_classes,
+        subjects=available_subjects,
+        pupils=pupils,
+        selected_class=selected_class,
+        selected_subject=selected_subject,
+        term=term,
+        year=year,
+        assessment_types=['BOT', 'MOT', 'EOT']
     )
 
 @app.route("/save_manual_marks", methods=["POST"])
 def save_manual_marks():
-
-    if not check_permission(
-        ['classteacher', 'subject_teacher', 'dos']
-    ):
+    if not check_permission(['classteacher', 'subject_teacher', 'dos']):
         abort(403)
 
     db = get_db_dict()
     cursor = db.cursor()
 
-    # =========================================================
-    # GET COMMON DETAILS
-    # =========================================================
-
-    subject = request.form.get(
-        'subject',
-        ''
-    ).strip()
-
-    term = request.form.get(
-        'term',
-        ''
-    ).strip()
-
-    year = request.form.get(
-        'year',
-        ''
-    )
-
-    teacher_initials = request.form.get(
-        'teacher_initials',
-        ''
-    ).strip()
-
-    # =========================================================
-    # VALIDATE TERM
-    # =========================================================
-
-    allowed_terms = [
-        'Term 1',
-        'Term 2',
-        'Term 3'
-    ]
-
-    if term not in allowed_terms:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Invalid term. Please select Term 1, Term 2 or Term 3.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=session.get(
-                    'selected_term',
-                    'Term 1'
-                ),
-                year=session.get(
-                    'selected_year',
-                    datetime.now().year
-                )
-            )
-        )
-
-    # =========================================================
-    # VALIDATE SUBJECT
-    # =========================================================
-
-    if not subject:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter the subject.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=year
-            )
-        )
-
-    # =========================================================
-    # VALIDATE TEACHER INITIALS
-    # =========================================================
-
-    if not teacher_initials:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter teacher initials.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=year
-            )
-        )
-
-    # =========================================================
-    # VALIDATE YEAR
-    # =========================================================
-
     try:
+        subject = request.form.get('subject', '').strip()
+        term = request.form.get('term', '').strip()
+        year = request.form.get('year', '').strip()
+        teacher_initials = request.form.get('teacher_initials', '').strip()
+        class_name = (
+            request.form.get('class_name')
+            or session.get('selected_class')
+            or ''
+        ).strip()
 
-        year = int(year)
+        if term not in ['Term 1', 'Term 2', 'Term 3']:
+            raise ValueError('Please select a valid term.')
 
-    except (
-        ValueError,
-        TypeError
-    ):
+        if not subject:
+            raise ValueError('Please select a subject.')
 
-        year = session.get(
-            'selected_year',
-            datetime.now().year
-        )
-
-    if year < 2000 or year > 2100:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter a valid year.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=session.get(
-                    'selected_year',
-                    datetime.now().year
-                )
-            )
-        )
-
-    # =========================================================
-    # REMEMBER TERM AND YEAR
-    # =========================================================
-
-    session['selected_term'] = term
-    session['selected_year'] = year
-
-    # =========================================================
-    # GET FORM DATA
-    # =========================================================
-
-    pupil_ids = request.form.getlist(
-        "pupil_id[]"
-    )
-
-    paper1_values = request.form.getlist(
-        "paper1[]"
-    )
-
-    paper2_values = request.form.getlist(
-        "paper2[]"
-    )
-
-    # =========================================================
-    # CONVERT MARK TO NUMBER
-    #
-    # EMPTY = NONE
-    # MAXIMUM = 100
-    # =========================================================
-
-    def parse_mark(value):
-
-        if value is None:
-            return None
-
-        value = str(value).strip()
-
-        if value == '':
-            return None
+        if not teacher_initials:
+            raise ValueError('Please enter teacher initials.')
 
         try:
+            year = int(year)
+        except (ValueError, TypeError):
+            raise ValueError('Please enter a valid year.')
 
-            mark = float(value)
+        if not 2000 <= year <= 2100:
+            raise ValueError('Please enter a valid year.')
 
-            if mark < 0:
+        # Identify Nursery or Primary.
+        def get_level(name):
+            name = re.sub(r'\s+', ' ', (name or '').strip()).upper()
+            compact = re.sub(r'[\s.]', '', name)
+
+            if name in {
+                'BABY', 'BABY CLASS',
+                'MIDDLE', 'MIDDLE CLASS',
+                'TOP', 'TOP CLASS'
+            }:
+                return 'nursery'
+
+            if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
+
+            if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
+
+            if re.fullmatch(r'P[1-7][A-Z]*', compact):
+                return 'primary'
+
+            return None
+
+        level = get_level(class_name)
+
+        if level not in ('nursery', 'primary'):
+            raise ValueError(
+                'Only Nursery and Primary classes are allowed.'
+            )
+
+        session['selected_class'] = class_name
+        session['selected_term'] = term
+        session['selected_year'] = year
+
+        pupil_ids = request.form.getlist('pupil_id[]')
+
+        # Primary uses BOT, MOT and EOT.
+        # Nursery uses the same fields in this example.
+        bot_values = request.form.getlist('bot[]')
+        mot_values = request.form.getlist('mot[]')
+        eot_values = request.form.getlist('eot[]')
+
+        if not pupil_ids:
+            raise ValueError('No pupils were submitted.')
+
+        def parse_mark(value):
+            value = (value or '').strip()
+
+            if value == '':
                 return None
 
-            return min(
-                mark,
-                100
-            )
-
-        except (
-            ValueError,
-            TypeError
-        ):
-
-            return None
-
-    # =========================================================
-    # PROCESS EACH PUPIL
-    # =========================================================
-
-    for i, sid in enumerate(
-        pupil_ids
-    ):
-
-        # -----------------------------------------------------
-        # PAPER 1
-        # -----------------------------------------------------
-
-        p1 = parse_mark(
-            paper1_values[i]
-            if i < len(paper1_values)
-            else None
-        )
-
-        # -----------------------------------------------------
-        # PAPER 2
-        # -----------------------------------------------------
-
-        p2 = parse_mark(
-            paper2_values[i]
-            if i < len(paper2_values)
-            else None
-        )
-
-        # -----------------------------------------------------
-        # BOTH PAPERS EMPTY
-        # -----------------------------------------------------
-
-        if p1 is None and p2 is None:
-            continue
-
-        # =====================================================
-        # CALCULATE FINAL MARK
-        # =====================================================
-
-        if (
-            p1 is not None
-            and p2 is not None
-        ):
-
-            final_mark = (
-                p1 + p2
-            ) / 2
-
-        elif p1 is not None:
-
-            final_mark = p1
-
-        else:
-
-            final_mark = p2
-
-        final_mark = round(
-            final_mark,
-            2
-        )
-
-        # =====================================================
-        # GET GRADE AND POINTS
-        # =====================================================
-
-        cursor.execute(
-            """
-            SELECT
-                grade,
-                points
-            FROM alevel_grading
-            WHERE is_subsidiary = 0
-              AND min_score <= %s
-              AND max_score >= %s
-            ORDER BY min_score DESC
-            LIMIT 1
-            """,
-            (
-                final_mark,
-                final_mark
-            )
-        )
-
-        grading = cursor.fetchone()
-
-        if grading:
-
-            grade = grading['grade']
-            points = grading['points']
-
-        else:
-
-            grade = None
-            points = None
-
-        # =====================================================
-        # INSERT OR UPDATE
-        # =====================================================
-
-        cursor.execute(
-            """
-            INSERT INTO marks
-            (
-                pupil_id,
-                subject,
-                paper1,
-                paper2,
-                final_mark,
-                grade,
-                points,
-                teacher_initials,
-                term,
-                year
-            )
-            VALUES
-            (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s
-            )
-
-            ON CONFLICT
-            (
-                pupil_id,
-                subject,
-                term,
-                year
-            )
-
-            DO UPDATE SET
-
-                paper1 =
-                    EXCLUDED.paper1,
-
-                paper2 =
-                    EXCLUDED.paper2,
-
-                final_mark =
-                    EXCLUDED.final_mark,
-
-                grade =
-                    EXCLUDED.grade,
-
-                points =
-                    EXCLUDED.points,
-
-                teacher_initials =
-                    EXCLUDED.teacher_initials
-            """,
-            (
-                sid,
-                subject,
-                p1,
-                p2,
-                final_mark,
-                grade,
-                points,
-                teacher_initials,
-                term,
-                year
-            )
-        )
-
-    # =========================================================
-    # SAVE
-    # =========================================================
-
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    # =========================================================
-    # SUCCESS MESSAGE
-    # =========================================================
-
-    flash(
-        f"A-Level marks for {term} {year} entered successfully.",
-        "success"
-    )
-
-    # =========================================================
-    # RETURN TO MARK ENTRY
-    # =========================================================
-
-    return redirect(
-        url_for(
-            'teacher_upload_marks',
-            class_name=session.get('selected_class'),
-            term=term,
-            year=year,
-            subject=subject
-        )
-    )
-
-@app.route("/save_olevel_marks", methods=["POST"])
-def save_olevel_marks():
-
-    if not check_permission(
-        ['classteacher', 'subject_teacher', 'dos']
-    ):
-        abort(403)
-
-    db = get_db_dict()
-    cursor = db.cursor()
-
-    # =========================================================
-    # GET COMMON DETAILS
-    # =========================================================
-
-    subject = request.form.get(
-        'subject',
-        ''
-    ).strip()
-
-    term = request.form.get(
-        'term',
-        ''
-    ).strip()
-
-    year = request.form.get(
-        'year',
-        ''
-    )
-
-    teacher_initials = request.form.get(
-        'teacher_initials',
-        ''
-    ).strip()
-
-    # =========================================================
-    # ALLOWED TERMS
-    # =========================================================
-
-    allowed_terms = [
-        'Term 1',
-        'Term 2',
-        'Term 3'
-    ]
-
-    if term not in allowed_terms:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Invalid term. Please select Term 1, Term 2 or Term 3.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=session.get(
-                    'selected_term',
-                    'Term 1'
-                ),
-                year=session.get(
-                    'selected_year',
-                    datetime.now().year
+            try:
+                mark = float(value)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    'All marks must be numeric values from 0 to 100.'
                 )
+
+            if not 0 <= mark <= 100:
+                raise ValueError('Marks must be between 0 and 100.')
+
+            return mark
+
+        for i, pupil_id in enumerate(pupil_ids):
+            try:
+                pupil_id = int(pupil_id)
+            except (ValueError, TypeError):
+                raise ValueError('Invalid pupil ID.')
+
+            bot = parse_mark(
+                bot_values[i] if i < len(bot_values) else ''
             )
-        )
-
-    # =========================================================
-    # SUBJECT VALIDATION
-    # =========================================================
-
-    if not subject:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter the subject.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=year
+            mot = parse_mark(
+                mot_values[i] if i < len(mot_values) else ''
             )
-        )
-
-    # =========================================================
-    # TEACHER INITIALS VALIDATION
-    # =========================================================
-
-    if not teacher_initials:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter teacher initials.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=year
-            )
-        )
-
-    # =========================================================
-    # YEAR VALIDATION
-    # =========================================================
-
-    try:
-
-        year = int(year)
-
-    except (
-        ValueError,
-        TypeError
-    ):
-
-        year = session.get(
-            'selected_year',
-            datetime.now().year
-        )
-
-    if year < 2000 or year > 2100:
-
-        cursor.close()
-        db.close()
-
-        flash(
-            'Please enter a valid year.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'teacher_upload_marks',
-                class_name=session.get(
-                    'selected_class'
-                ),
-                term=term,
-                year=session.get(
-                    'selected_year',
-                    datetime.now().year
-                )
-            )
-        )
-
-    # =========================================================
-    # REMEMBER TERM AND YEAR
-    # =========================================================
-
-    session['selected_term'] = term
-    session['selected_year'] = year
-
-    # =========================================================
-    # GET MARK DATA
-    # =========================================================
-
-    pupil_ids = request.form.getlist(
-        "pupil_id[]"
-    )
-
-    ai1_raw = request.form.getlist(
-        "ai1[]"
-    )
-
-    ai2_raw = request.form.getlist(
-        "ai2[]"
-    )
-
-    ai3_raw = request.form.getlist(
-        "ai3[]"
-    )
-
-    eot_raw = request.form.getlist(
-        "eot_score[]"
-    )
-
-    # =========================================================
-    # CLEAN SCORE
-    # =========================================================
-
-    def clean_score(value):
-
-        if value is None:
-            return None
-
-        value = str(value).strip()
-
-        if value == '':
-            return None
-
-        try:
-
-            score = float(value)
-
-            # Prevent negative marks
-            if score < 0:
-                return None
-
-            # Maximum raw score = 100
-            return min(
-                score,
-                100
+            eot = parse_mark(
+                eot_values[i] if i < len(eot_values) else ''
             )
 
-        except (
-            ValueError,
-            TypeError
-        ):
-
-            return None
-
-    # =========================================================
-    # PROCESS PUPILS
-    # =========================================================
-
-    for i, sid in enumerate(
-        pupil_ids
-    ):
-
-        # -----------------------------------------------------
-        # AI1
-        # -----------------------------------------------------
-
-        a1 = clean_score(
-            ai1_raw[i]
-            if i < len(ai1_raw)
-            else None
-        )
-
-        # -----------------------------------------------------
-        # AI2
-        # -----------------------------------------------------
-
-        a2 = clean_score(
-            ai2_raw[i]
-            if i < len(ai2_raw)
-            else None
-        )
-
-        # -----------------------------------------------------
-        # AI3
-        # -----------------------------------------------------
-
-        a3 = clean_score(
-            ai3_raw[i]
-            if i < len(ai3_raw)
-            else None
-        )
-
-        # -----------------------------------------------------
-        # EOT
-        # -----------------------------------------------------
-
-        e = clean_score(
-            eot_raw[i]
-            if i < len(eot_raw)
-            else None
-        )
-
-        # =====================================================
-        # GET AVAILABLE AI SCORES
-        # =====================================================
-
-        ai_scores = [
-            score
-            for score in [
-                a1,
-                a2,
-                a3
+            scores = [
+                score for score in (bot, mot, eot)
+                if score is not None
             ]
-            if score is not None
-        ]
 
-        # =====================================================
-        # AI AVERAGE
-        # =====================================================
+            if not scores:
+                continue
 
-        ai_average = (
+            final_mark = round(sum(scores) / len(scores), 2)
 
-            sum(ai_scores)
-            / len(ai_scores)
+            # Use the grading table for the selected class level.
+            # Adjust this query if Nursery and Primary have different
+            # grading tables or grading rules.
+            cursor.execute(
+                """
+                SELECT grade, points
+                FROM alevel_grading
+                WHERE is_subsidiary = 0
+                  AND min_score <= %s
+                  AND max_score >= %s
+                ORDER BY min_score DESC
+                LIMIT 1
+                """,
+                (final_mark, final_mark)
+            )
 
-            if ai_scores
-            else None
+            grading = cursor.fetchone()
 
-        )
+            grade = grading['grade'] if grading else None
+            aggregate = grading['aggregate'] if grading else None
 
-        # =====================================================
-        # AI CONTRIBUTION
-        #
-        # AI contributes 20 marks.
-        #
-        # AI average is out of 3.
-        # =====================================================
-
-        if ai_average is not None:
-
-            ai_contribution = (
-                ai_average / 3
-            ) * 20
-
-        else:
-
-            ai_contribution = 0
-
-        # =====================================================
-        # EOT CONTRIBUTION
-        #
-        # EOT contributes maximum 80 marks.
-        # =====================================================
-
-        if e is not None:
-
-            eot_contribution = max(
-                0,
-                min(
-                    e,
-                    80
+            # Requires these columns to exist in marks:
+            # bot, mot, eot, final_mark, grade, points.
+            cursor.execute(
+                """
+                INSERT INTO marks (
+                    pupil_id,
+                    subject,
+                    bot,
+                    mot,
+                    eot,
+                    final_mark,
+                    grade,
+                    aggregate,
+                    teacher_initials,
+                    term,
+                    year
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (pupil_id, subject, term, year)
+                DO UPDATE SET
+                    bot = EXCLUDED.bot,
+                    mot = EXCLUDED.mot,
+                    eot = EXCLUDED.eot,
+                    final_mark = EXCLUDED.final_mark,
+                    grade = EXCLUDED.grade,
+                    aggregate = EXCLUDED.aggregate,
+                    teacher_initials = EXCLUDED.teacher_initials
+                """,
+                (
+                    pupil_id,
+                    subject,
+                    bot,
+                    mot,
+                    eot,
+                    final_mark,
+                    grade,
+                    aggregate
+                    teacher_initials,
+                    term,
+                    year
                 )
             )
 
-        else:
+        db.commit()
 
-            eot_contribution = 0
-
-        # =====================================================
-        # TOTAL SCORE
-        # =====================================================
-
-        total_score = (
-            ai_contribution
-            + eot_contribution
+        flash(
+            f'Primary/Nursery marks for {term} {year} saved successfully.',
+            'success'
         )
 
-        total_score = round(
-            total_score,
-            2
-        )
-
-        # =====================================================
-        # GRADE + DESCRIPTOR
-        # =====================================================
-
-        grade, descriptor = (
-            get_grade_and_descriptor(
-                total_score
+        return redirect(
+            url_for(
+                'teacher_upload_marks',
+                class_name=class_name,
+                term=term,
+                year=year,
+                subject=subject
             )
         )
 
-        # =====================================================
-        # GENERAL IDENTIFIER
-        #
-        # Convert percentage to identifier out of 3.
-        # =====================================================
+    except ValueError as e:
+        db.rollback()
+        flash(str(e), 'danger')
+        return redirect(url_for('teacher_upload_marks'))
 
-        identifier = round(
-            (
-                total_score / 100
-            ) * 3,
-            2
+    except Exception:
+        db.rollback()
+        app.logger.exception('Failed to save manual marks.')
+        flash(
+            'Unable to save marks. Check your marks table columns and server logs.',
+            'danger'
         )
+        return redirect(url_for('teacher_upload_marks'))
 
-        # =====================================================
-        # INSERT OR UPDATE
-        # =====================================================
-
-        cursor.execute(
-            """
-            INSERT INTO marks
-            (
-                pupil_id,
-                subject,
-                ai1,
-                ai2,
-                ai3,
-                ai_average,
-                ai_contribution,
-                eot_score,
-                total_score,
-                grade,
-                identifier,
-                descriptor,
-                teacher_initials,
-                term,
-                year
-            )
-
-            VALUES
-            (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s
-            )
-
-            ON CONFLICT
-            (
-                pupil_id,
-                subject,
-                term,
-                year
-            )
-
-            DO UPDATE SET
-
-                ai1 =
-                    EXCLUDED.ai1,
-
-                ai2 =
-                    EXCLUDED.ai2,
-
-                ai3 =
-                    EXCLUDED.ai3,
-
-                ai_average =
-                    EXCLUDED.ai_average,
-
-                ai_contribution =
-                    EXCLUDED.ai_contribution,
-
-                eot_score =
-                    EXCLUDED.eot_score,
-
-                total_score =
-                    EXCLUDED.total_score,
-
-                grade =
-                    EXCLUDED.grade,
-
-                identifier =
-                    EXCLUDED.identifier,
-
-                descriptor =
-                    EXCLUDED.descriptor,
-
-                teacher_initials =
-                    EXCLUDED.teacher_initials
-            """,
-
-            (
-                sid,
-                subject,
-
-                a1,
-                a2,
-                a3,
-
-                ai_average,
-                ai_contribution,
-
-                e,
-
-                total_score,
-
-                grade,
-
-                identifier,
-
-                descriptor,
-
-                teacher_initials,
-
-                term,
-                year
-            )
-        )
-
-    # =========================================================
-    # SAVE
-    # =========================================================
-
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    # =========================================================
-    # SUCCESS MESSAGE
-    # =========================================================
-
-    flash(
-        f"O-Level marks for {term} {year} entered successfully.",
-        "success"
-    )
-
-    # =========================================================
-    # RETURN TO MARK ENTRY
-    # =========================================================
-
-    return redirect(
-        url_for(
-            'teacher_upload_marks',
-            class_name=session.get('selected_class'),
-            term=term,
-            year=year,
-            subject=subject
-        )
-    )
+    finally:
+        cursor.close()
+        db.close()
 @app.route('/teacher/report_card/<pupil_id>')
 def teacher_report_card(pupil_id):
 
@@ -7060,502 +4608,309 @@ def teacher_report_card(pupil_id):
     db = get_db_dict()
     cur = db.cursor()
 
-    if role in ['classteacher','subject_teacher']:
+    try:
+        # =====================================================
+        # CHECK PUPIL ACCESS
+        # =====================================================
 
-        selected_class = session.get('selected_class')
+        if role in ['classteacher', 'subject_teacher']:
 
-        if not selected_class:
-            flash('No class selected','danger')
-            return redirect(
-                url_for('teacher_pupils')
+            selected_class = session.get('selected_class')
+
+            if not selected_class:
+                flash('No class selected.', 'danger')
+                return redirect(url_for('teacher_pupils'))
+
+            cur.execute(
+                "SELECT class FROM pupils WHERE pupil_id=%s",
+                (pupil_id,)
             )
 
-        cur.execute(
-            "SELECT class FROM pupils WHERE pupil_id=%s",
-            (pupil_id,)
-        )
+            res = cur.fetchone()
 
-        res = cur.fetchone()
+            if not res or res['class'] != selected_class:
+                flash('Pupil not in your class.', 'danger')
+                return redirect(url_for('teacher_pupils'))
 
-        if not res or res['class'] != selected_class:
-            flash(
-                'Pupil not in your class.',
-                'danger'
+        elif role == 'parent':
+
+            parent_phone = session.get('phone')
+
+            if not parent_phone:
+                flash('No phone linked.', 'danger')
+                return redirect(url_for('dashboard'))
+
+            cur.execute(
+                """
+                SELECT parent_phone
+                FROM pupils
+                WHERE pupil_id=%s
+                """,
+                (pupil_id,)
             )
-            return redirect(
-                url_for('teacher_pupils')
+
+            res = cur.fetchone()
+
+            if not res or res['parent_phone'] != parent_phone:
+                flash('Not authorized.', 'danger')
+                return redirect(url_for('dashboard'))
+
+        elif role in ['dos', 'headteacher']:
+
+            cur.execute(
+                "SELECT pupil_id FROM pupils WHERE pupil_id=%s",
+                (pupil_id,)
             )
 
+            if not cur.fetchone():
+                flash('Pupil not found.', 'danger')
+                return redirect(url_for('dashboard'))
 
-    elif role == 'parent':
-
-        parent_phone = session.get('phone')
-
-        if not parent_phone:
-            flash(
-                'No phone linked.',
-                'danger'
-            )
-            return redirect(
-                url_for('dashboard')
-            )
+        # =====================================================
+        # GET PUPIL DETAILS
+        # =====================================================
 
         cur.execute(
             """
-            SELECT parent_phone
+            SELECT full_name, class, photo_path
             FROM pupils
             WHERE pupil_id=%s
             """,
             (pupil_id,)
         )
 
-        res = cur.fetchone()
+        pupil = cur.fetchone()
 
-        if not res or res['parent_phone'] != parent_phone:
-            flash(
-                'Not authorized.',
-                'danger'
-            )
-            return redirect(
-                url_for('dashboard')
-            )
+        if not pupil:
+            flash('Pupil not found.', 'danger')
+            return redirect(url_for('dashboard'))
 
+        full_name = pupil['full_name']
+        class_name = pupil['class']
+        photo_url = get_photo_url(pupil['photo_path'])
 
-    elif role in ['dos','headteacher']:
-
-        cur.execute(
-            """
-            SELECT class
-            FROM pupils
-            WHERE pupil_id=%s
-            """,
-            (pupil_id,)
+        class_upper = (class_name or '').strip().upper()
+        normalized_class = (
+            class_upper.replace('.', '').replace(' ', '')
         )
 
-        if not cur.fetchone():
-            flash(
-                'Pupil not found.',
-                'danger'
-            )
+        # =====================================================
+        # IDENTIFY CLASS LEVEL
+        # =====================================================
 
-            return redirect(
-                url_for('dashboard')
-            )
+        def get_class_level(name):
+            name = re.sub(
+                r'\s+', ' ', (name or '').strip()
+            ).upper()
 
+            compact = re.sub(r'[\s.]', '', name)
 
-    cur.execute(
-        """
-        SELECT
-            full_name,
-            class,
-            photo_path
-        FROM pupils
-        WHERE pupil_id=%s
-        """,
-        (pupil_id,)
-    )
+            if name in {
+                'BABY', 'BABY CLASS',
+                'MIDDLE', 'MIDDLE CLASS',
+                'TOP', 'TOP CLASS'
+            }:
+                return 'nursery'
 
-    pupil = cur.fetchone()
+            if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
 
-    if not pupil:
-        flash(
-            'Pupil not found.',
-            'danger'
-        )
-        return redirect(
-            url_for('dashboard')
-        )
+            if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
 
+            if re.fullmatch(r'P[1-7][A-Z]*', compact):
+                return 'primary'
 
-    full_name = pupil['full_name']
-    class_name = pupil['class']
-    photo_url = get_photo_url(
-        pupil['photo_path']
-    )
-    # =========================================================
-    # =========================================================
-# CURRENT REPORT CARD TERM AND YEAR
-# =========================================================
-
-    cur.execute(
-        """
-        SELECT
-            current_term,
-            current_year
-        FROM school_settings
-        WHERE id = 1
-        """
-    )
-    
-    report_settings = cur.fetchone()
-    
-    term = (
-        report_settings['current_term']
-        if report_settings and report_settings['current_term']
-        else 'Term 1'
-    )
-    
-    year = (
-        report_settings['current_year']
-        if report_settings and report_settings['current_year']
-        else datetime.now().year
-    )
-    cur.execute(
-        """
-        SELECT
-            school_name,
-            school_address,
-            school_phone,
-            school_email,
-            logo_url
-        FROM school_settings
-        WHERE id=1
-        """
-    )
-
-    school = cur.fetchone()
-
-
-    school_name = (
-        school['school_name']
-        if school else
-        'YOUR SCHOOL NAME'
-    )
-
-    school_address = (
-        school['school_address']
-        if school else
-        ''
-    )
-
-    school_phone = (
-        school['school_phone']
-        if school else
-        ''
-    )
-
-    school_email = (
-        school['school_email']
-        if school else
-        ''
-    )
-    if school['logo_url']:
-        school_logo_url = url_for(
-            'static',
-            filename='uploads/' + school['logo_url']
-        )
-    else:
-        school_logo_url = url_for(
-            'static',
-            filename='images/logo.png'
-        )
-
-
-    cur.execute(
-        """
-        SELECT
-            next_term_begins,
-            next_term_ends,
-            headteacher_stamp
-        FROM school_settings
-        WHERE id=1
-        """
-    )
-
-    settings = cur.fetchone()
-    next_term_begins = (
-        settings['next_term_begins']
-        if settings else None
-    )
-
-    next_term_ends = (
-        settings['next_term_ends']
-        if settings else None
-    )
-
-    stamp_url = (
-        url_for(
-            'static',
-            filename=
-            'uploads/' +
-            settings['headteacher_stamp']
-        )
-        if settings and settings['headteacher_stamp']
-        else None
-    )
-    # Determine whether the pupil is A-Level
-    class_upper = (class_name or '').strip().upper()
-    
-    # Remove dots and spaces so that:
-    # S.5ARTS  -> S5ARTS
-    # S.6ARTS  -> S6ARTS
-    # S5       -> S5
-    # S6       -> S6
-    normalized_class = (
-        class_upper
-        .replace('.', '')
-        .replace(' ', '')
-    )
-    
-    is_alevel = (
-        normalized_class.startswith('S5')
-        or normalized_class.startswith('S6')
-        or class_upper in ['A-LEVEL', 'A LEVEL', 'ALEVEL']
-    )
-    if is_alevel:
-
-        cur.execute(
-            """
-            SELECT
-                subject,
-                paper1,
-                paper2,
-                final_mark,
-                grade,
-                points,
-                teacher_initials
-            FROM marks
-            WHERE pupil_id=%s
-            AND term=%s
-            AND year=%s
-            ORDER BY subject
-            """,
-            (
-                pupil_id,
-                term,
-                year
-            )
-        )
-        raw_marks = cur.fetchall()
-
-        marks = [
-            m
-            for m in raw_marks
-            if any(
-                m[field] not in [None, '']
-                for field in [
-                    'paper1',
-                    'paper2',
-                    'final_mark',
-                    'grade',
-                    'points'
-                ]
-            )
-        ]
-        total_points = sum(
-            m['points']
-            for m in marks
-            if m['points'] is not None
-        ) if marks else 0
-        alevel_teacher_comment = get_alevel_class_teacher_comment(
-        total_points
-        )
-        alevel_headteacher_comment = get_alevel_headteacher_comment(
-        total_points
-        )
-        cur.close()
-        return render_template(
-            'teacher/report_card_alevel.html',
-            pupil_id=pupil_id,
-            full_name=full_name,
-            class_name=class_name,
-            photo_url=photo_url,
-            term=term,
-            year=year,
-            marks=marks,
-            total_points=total_points,
-            teacher_comment=alevel_teacher_comment,
-            headteacher_comment=alevel_headteacher_comment,
-            next_term_begins=next_term_begins,
-            next_term_ends=next_term_ends,
-            stamp_url=stamp_url,
-            school_name=school_name,
-            school_address=school_address,
-            school_phone=school_phone,
-            school_email=school_email,
-            school_logo_url=school_logo_url,
-
-        )
-
-
-    else:
-
-        cur.execute(
-            """
-            SELECT
-                subject,
-                ai1,
-                ai2,
-                ai3,
-                ai_average,
-                ai_contribution,
-                eot_score,
-                total_score,
-                grade,
-                identifier,
-                descriptor,
-                teacher_initials
-            FROM marks
-            WHERE pupil_id=%s
-            AND term=%s
-            AND year=%s
-            ORDER BY subject
-            """,
-            (
-                pupil_id,
-                term,
-                year
-            )
-        )
-        raw_marks = cur.fetchall()
-
-        marks = []
-        
-        
-        for m in raw_marks:
-        
-            # =====================================================
-            # SKIP SUBJECT IF NO MARKS HAVE BEEN ENTERED
-            # =====================================================
-        
             if (
-                m['ai1'] in [None, '']
-                and m['ai2'] in [None, '']
-                and m['ai3'] in [None, '']
-                and m['eot_score'] in [None, '']
+                normalized_class.startswith('S5')
+                or normalized_class.startswith('S6')
+                or class_upper in ['A-LEVEL', 'A LEVEL', 'ALEVEL']
             ):
-                continue
-        
-            ai_scores = []
+                return 'alevel'
 
-            if m['ai1'] not in [None,'']:
-                ai_scores.append(
-                    float(m['ai1'])
+            return 'olevel'
+
+        class_level = get_class_level(class_name)
+
+        # =====================================================
+        # CURRENT REPORT CARD TERM AND YEAR
+        # =====================================================
+
+        cur.execute(
+            """
+            SELECT current_term, current_year
+            FROM school_settings
+            WHERE id=1
+            """
+        )
+
+        report_settings = cur.fetchone()
+
+        term = (
+            report_settings['current_term']
+            if report_settings and report_settings['current_term']
+            else 'Term 1'
+        )
+
+        year = (
+            report_settings['current_year']
+            if report_settings and report_settings['current_year']
+            else datetime.now().year
+        )
+
+        # =====================================================
+        # SCHOOL DETAILS
+        # =====================================================
+
+        cur.execute(
+            """
+            SELECT
+                school_name,
+                school_address,
+                school_phone,
+                school_email,
+                logo_url,
+                next_term_begins,
+                next_term_ends,
+                headteacher_stamp
+            FROM school_settings
+            WHERE id=1
+            """
+        )
+
+        school = cur.fetchone() or {}
+
+        school_name = school.get('school_name') or 'YOUR SCHOOL NAME'
+        school_address = school.get('school_address') or ''
+        school_phone = school.get('school_phone') or ''
+        school_email = school.get('school_email') or ''
+
+        if school.get('logo_url'):
+            school_logo_url = url_for(
+                'static',
+                filename='uploads/' + school['logo_url']
+            )
+        else:
+            school_logo_url = url_for(
+                'static',
+                filename='images/logo.png'
+            )
+
+        next_term_begins = school.get('next_term_begins')
+        next_term_ends = school.get('next_term_ends')
+
+        stamp_url = (
+            url_for(
+                'static',
+                filename='uploads/' + school['headteacher_stamp']
+            )
+            if school.get('headteacher_stamp')
+            else None
+        )
+
+        # =====================================================
+        # NURSERY AND PRIMARY REPORT CARD
+        # BOT, MOT AND EOT
+        # =====================================================
+
+        if class_level in ['nursery', 'primary']:
+
+            cur.execute(
+                """
+                SELECT
+                    subject,
+                    bot,
+                    mot,
+                    eot,
+                    final_mark,
+                    grade,
+                    aggregate,
+                    teacher_initials
+                FROM marks
+                WHERE pupil_id=%s
+                  AND term=%s
+                  AND year=%s
+                ORDER BY subject
+                """,
+                (pupil_id, term, year)
+            )
+
+            raw_marks = cur.fetchall()
+            marks = []
+
+            for m in raw_marks:
+
+                bot = m['bot']
+                mot = m['mot']
+                eot = m['eot']
+
+                entered_scores = [
+                    float(score)
+                    for score in (bot, mot, eot)
+                    if score is not None and score != ''
+                ]
+
+                # Skip subjects without any entered marks.
+                if not entered_scores:
+                    continue
+
+                # Same calculation as the manual mark-saving route.
+                final_mark = round(
+                    sum(entered_scores) / len(entered_scores),
+                    2
                 )
 
-            if m['ai2'] not in [None,'']:
-                ai_scores.append(
-                    float(m['ai2'])
-                )
-
-            if m['ai3'] not in [None,'']:
-                ai_scores.append(
-                    float(m['ai3'])
-                )
-            ai_average = (
-                sum(ai_scores) / len(ai_scores)
-                if ai_scores
-                else 0
-            )
-            ai_contribution = (
-                (ai_average / 3) * 20
-                if ai_average > 0
-                else 0
-            )
-            eot_score = m['eot_score']
-            
-            # EOT is already marked out of 80.
-            # Only constrain it to the allowed range 0–80.
-            eot_contribution = (
-                max(0, min(float(eot_score), 80))
-                if eot_score is not None
-                else 0
-            )
-            
-            total_score = (
-                ai_contribution +
-                eot_contribution
-            )
-            grade, descriptor = get_grade_and_descriptor(total_score)
-            
-            identifier = round(
-                (total_score / 100) * 3,
-                2
-            )
-            
-            marks.append(
-                {
+                marks.append({
                     'subject': m['subject'],
-                    'ai1': m['ai1'],
-                    'ai2': m['ai2'],
-                    'ai3': m['ai3'],
-                    'ai_average': round(
-                        ai_average,
-                        2
-                    ),
-                    'ai_contribution': round(
-                        ai_contribution,
-                        2
-                    ),
-                    'eot_score': eot_score,
-                    'total_score': round(
-                        total_score,
-                        2
-                    ),
-                    'grade': grade,
-                    'identifier': identifier,
-                    'descriptor': descriptor,
+                    'bot': bot,
+                    'mot': mot,
+                    'eot': eot,
+                    'final_mark': final_mark,
+                    'grade': m['grade'],
+                    'points': m['points'],
                     'teacher_initials': m['teacher_initials']
-                }
+                })
+
+            valid_marks = [
+                m for m in marks
+                if m['final_mark'] is not None
+            ]
+
+            total_marks = sum(
+                m['final_mark'] for m in valid_marks
             )
 
-        valid_marks = [
-            m for m in marks
-            if m['total_score'] is not None
-            and float(m['total_score']) > 0
-        ]
-        total_final = sum(
-            float(m['total_score'])
-            for m in valid_marks
-        )
-        count = len(valid_marks)
-        general_average = (
-            total_final / count
-            if count > 0
-            else 0
-        ) 
-        general_identifier = round(
-            (general_average / 100) * 3,
-            2
-        )  
-        general_grade, general_descriptor = get_grade_and_descriptor(general_average)
-        
-        olevel_teacher_comment = get_olevel_class_teacher_comment(
-            general_identifier
-        )
-        olevel_headteacher_comment = get_olevel_headteacher_comment(
-            general_identifier
-        )
+            subject_count = len(valid_marks)
+
+            general_average = (
+                round(total_marks / subject_count, 2)
+                if subject_count else 0
+            )
+
+            return render_template(
+                'teacher/report_card_primary.html',
+                pupil_id=pupil_id,
+                full_name=full_name,
+                class_name=class_name,
+                photo_url=photo_url,
+                term=term,
+                year=year,
+                marks=marks,
+                total_marks=round(total_marks, 2),
+                subject_count=subject_count,
+                general_average=general_average,
+                next_term_begins=next_term_begins,
+                next_term_ends=next_term_ends,
+                stamp_url=stamp_url,
+                school_name=school_name,
+                school_address=school_address,
+                school_phone=school_phone,
+                school_email=school_email,
+                school_logo_url=school_logo_url
+            )
+    finally:
         cur.close()
-        return render_template(
-            'teacher/report_card.html',
-            pupil_id=pupil_id,
-            full_name=full_name,
-            class_name=class_name,
-            photo_url=photo_url,
-            term=term,
-            year=year,
-            marks=marks,
-            avg_out_of_3=general_identifier,
-            general_average=round(
-                general_average,
-                2
-            ),
-            general_identifier=general_identifier,
-            general_grade=general_grade,
-            general_descriptor=general_descriptor,
-            teacher_comment=olevel_teacher_comment,
-            headteacher_comment=olevel_headteacher_comment,
-            next_term_begins=next_term_begins,
-            next_term_ends=next_term_ends,
-            stamp_url=stamp_url,
-            school_name=school_name,
-            school_address=school_address,
-            school_phone=school_phone,
-            school_email=school_email,
-            school_logo_url=school_logo_url,
-    
-        )
+        db.close()
 
 @app.route('/teacher/edit_pupil/<pupil_id>', methods=['GET', 'POST'])
 def teacher_edit_pupil(pupil_id):
@@ -7673,11 +5028,7 @@ def teacher_edit_pupil(pupil_id):
             'disability',
             ''
         )
-        programme = request.form.get(
-            'programme',
-            ''
-        ).strip()
-
+  
         # =================================================
         # NEW: RESIDENCE
         # =================================================
@@ -7686,49 +5037,6 @@ def teacher_edit_pupil(pupil_id):
             'residence',
             ''
         ).strip()
-
-        # =================================================
-        # VALIDATE PROGRAMME
-        # =================================================
-
-        class_upper = class_name.upper()
-
-        # S.1-S.4 = USE / Non-USE
-        # S.5-S.6 = UPOLET / Non-UPOLET
-
-        if class_upper.startswith(('S.1', 'S.2', 'S.3', 'S.4')):
-
-            valid_programmes = [
-                'USE',
-                'Non-USE'
-            ]
-
-        elif class_upper.startswith(('S.5', 'S.6')):
-
-            valid_programmes = [
-                'UPOLET',
-                'Non-UPOLET'
-            ]
-
-        else:
-
-            valid_programmes = []
-
-        if programme not in valid_programmes:
-
-            cur.close()
-
-            flash(
-                f'Invalid programme selected for {class_name}.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'teacher_edit_pupil',
-                    pupil_id=pupil_id
-                )
-            )
 
         # =================================================
         # VALIDATE RESIDENCE
@@ -7837,7 +5145,6 @@ def teacher_edit_pupil(pupil_id):
                 preferred_house=%s,
                 disability=%s,
                 photo_path=%s,
-                programme=%s,
                 residence=%s
 
             WHERE pupil_id=%s
@@ -7852,7 +5159,6 @@ def teacher_edit_pupil(pupil_id):
             preferred_house,
             disability,
             photo_path,
-            programme,
             residence,
             pupil_id
         ))
@@ -8034,33 +5340,6 @@ def teacher_upload_pupils():
             error_count = 0
             errors = []
 
-            # =================================================
-            # DETERMINE ALLOWED PROGRAMMES
-            # =================================================
-
-            class_upper = assigned_class
-
-            if class_upper.startswith(
-                ('S.1', 'S.2', 'S.3', 'S.4')
-            ):
-
-                valid_programmes = [
-                    'USE',
-                    'Non-USE'
-                ]
-
-            elif class_upper.startswith(
-                ('S.5', 'S.6')
-            ):
-
-                valid_programmes = [
-                    'UPOLET',
-                    'Non-UPOLET'
-                ]
-
-            else:
-
-                valid_programmes = []
 
             # =================================================
             # INSERT PUPIL
@@ -8069,7 +5348,6 @@ def teacher_upload_pupils():
             def insert_pupil(
                 full_name,
                 parent_phone,
-                programme='',
                 residence=''
             ):
 
@@ -8084,12 +5362,6 @@ def teacher_upload_pupils():
                     str(parent_phone or '')
                     .strip()
                 )
-
-                programme = (
-                    str(programme or '')
-                    .strip()
-                )
-
                 residence = (
                     str(residence or '')
                     .strip()
@@ -8105,23 +5377,7 @@ def teacher_upload_pupils():
 
                     return False
 
-                # ---------------------------------------------
-                # VALIDATE PROGRAMME IF PROVIDED
-                # ---------------------------------------------
-
-                if programme:
-
-                    if programme not in valid_programmes:
-
-                        error_count += 1
-
-                        errors.append(
-                            f"{full_name}: Invalid programme "
-                            f"'{programme}' for {assigned_class}"
-                        )
-
-                        return False
-
+              
                 # ---------------------------------------------
                 # VALIDATE RESIDENCE IF PROVIDED
                 # ---------------------------------------------
@@ -8147,7 +5403,6 @@ def teacher_upload_pupils():
                 # ---------------------------------------------
 
                 pupil_id = generate_pupil_id()
-                qr_token = generate_qr_token()
                 # ---------------------------------------------
                 # INSERT
                 # ---------------------------------------------
@@ -8159,9 +5414,7 @@ def teacher_upload_pupils():
                         full_name,
                         class,
                         parent_phone,
-                        programme,
                         residence,
-                        qr_token,
                         admission_status,
                         fees_total,
                         fees_paid,
@@ -8169,8 +5422,6 @@ def teacher_upload_pupils():
                     )
                     VALUES
                     (
-                        %s,
-                        %s,
                         %s,
                         %s,
                         %s,
@@ -8185,8 +5436,7 @@ def teacher_upload_pupils():
                     full_name,
                     assigned_class,
                     parent_phone,
-                    programme or None,
-                    residence or None, qr_token
+                    residence or None,
                 ))
 
                 success_count += 1
@@ -8217,7 +5467,6 @@ def teacher_upload_pupils():
 
                 full_name_col = None
                 parent_phone_col = None
-                programme_col = None
                 residence_col = None
 
                 for idx, h in enumerate(headers):
@@ -8237,13 +5486,6 @@ def teacher_upload_pupils():
                     ]:
 
                         parent_phone_col = idx
-
-                    elif h in [
-                        'programme',
-                        'program'
-                    ]:
-
-                        programme_col = idx
 
                     elif h in [
                         'residence',
@@ -8285,18 +5527,7 @@ def teacher_upload_pupils():
                             column=parent_phone_col + 1
                         ).value or ''
                     ).strip()
-
-                    programme = ''
-
-                    if programme_col is not None:
-
-                        programme = str(
-                            sheet.cell(
-                                row=row_idx,
-                                column=programme_col + 1
-                            ).value or ''
-                        ).strip()
-
+                    
                     residence = ''
 
                     if residence_col is not None:
@@ -8311,7 +5542,6 @@ def teacher_upload_pupils():
                     if not insert_pupil(
                         full_name,
                         parent_phone,
-                        programme,
                         residence
                     ):
 
@@ -8348,7 +5578,6 @@ def teacher_upload_pupils():
 
                 full_name_col = None
                 parent_phone_col = None
-                programme_col = None
                 residence_col = None
 
                 for idx, h in enumerate(headers):
@@ -8368,13 +5597,6 @@ def teacher_upload_pupils():
                     ]:
 
                         parent_phone_col = idx
-
-                    elif h in [
-                        'programme',
-                        'program'
-                    ]:
-
-                        programme_col = idx
 
                     elif h in [
                         'residence',
@@ -8411,18 +5633,6 @@ def teacher_upload_pupils():
                         else ''
                     )
 
-                    programme = ''
-
-                    if (
-                        programme_col is not None
-                        and programme_col < len(row)
-                    ):
-
-                        programme = (
-                            row[programme_col]
-                            .strip()
-                        )
-
                     residence = ''
 
                     if (
@@ -8438,7 +5648,6 @@ def teacher_upload_pupils():
                     if not insert_pupil(
                         full_name,
                         parent_phone,
-                        programme,
                         residence
                     ):
 
@@ -8538,273 +5747,215 @@ def print_all_report_cards():
 
     db = get_db_dict()
     cur = db.cursor()
-    # ============================================================
-    # CLASS, TERM AND YEAR
-    # ============================================================
-    
-    class_name = request.args.get(
-        'class_name',
-        session.get('selected_class', '')
-    ).strip()
-    
-    # ------------------------------------------------------------
-    # GET ACTIVE TERM AND YEAR FROM DOS REPORT SETTINGS
-    # ------------------------------------------------------------
-    
-    cur.execute(
-        """
-        SELECT
-            current_term,
-            current_year
-        FROM school_settings
-        WHERE id = 1
-        """
-    )
-    
-    report_settings = cur.fetchone()
-    
-    allowed_terms = [
-        'Term 1',
-        'Term 2',
-        'Term 3'
-    ]
-    
-    if report_settings:
-    
+
+    try:
+        # ========================================================
+        # CLASS, TERM AND YEAR
+        # ========================================================
+
+        class_name = request.args.get(
+            'class_name',
+            session.get('selected_class', '')
+        ).strip()
+
+        if not class_name:
+            flash('No class selected.', 'danger')
+            return redirect(url_for('teacher_pupils'))
+
+        # ========================================================
+        # ALLOW NURSERY AND PRIMARY ONLY
+        # ========================================================
+
+        def get_class_level(name):
+            name = re.sub(
+                r'\s+', ' ', (name or '').strip()
+            ).upper()
+
+            compact = re.sub(r'[\s.]', '', name)
+
+            if name in {
+                'BABY', 'BABY CLASS',
+                'MIDDLE', 'MIDDLE CLASS',
+                'TOP', 'TOP CLASS'
+            }:
+                return 'nursery'
+
+            if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
+
+            if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
+                return 'primary'
+
+            if re.fullmatch(r'P[1-7][A-Z]*', compact):
+                return 'primary'
+
+            return None
+
+        class_level = get_class_level(class_name)
+
+        if class_level not in ('nursery', 'primary'):
+            flash(
+                'This report printing page is for Nursery and Primary classes only.',
+                'danger'
+            )
+            return redirect(url_for('teacher_pupils'))
+
+        # ========================================================
+        # GET CURRENT TERM AND YEAR
+        # ========================================================
+
+        cur.execute(
+            """
+            SELECT current_term, current_year
+            FROM school_settings
+            WHERE id = 1
+            """
+        )
+
+        report_settings = cur.fetchone()
+
+        allowed_terms = [
+            'Term 1',
+            'Term 2',
+            'Term 3'
+        ]
+
         term = (
             report_settings['current_term']
-            or 'Term 1'
-        ).strip()
-    
+            if report_settings and report_settings['current_term']
+            else 'Term 1'
+        )
+
         year = (
             report_settings['current_year']
-            or datetime.now().year
-        )
-    
-    else:
-    
-        term = 'Term 1'
-        year = datetime.now().year
-    
-    # ------------------------------------------------------------
-    # VALIDATE TERM
-    # ------------------------------------------------------------
-    
-    if term not in allowed_terms:
-        term = 'Term 1'
-    
-    # ------------------------------------------------------------
-    # OPTIONAL URL OVERRIDE
-    # ------------------------------------------------------------
-    #
-    # If a specific term/year is deliberately supplied in the URL,
-    # allow it to override the active school setting.
-    #
-    # Otherwise, the DOS setting remains the default.
-    # ------------------------------------------------------------
-    
-    url_term = request.args.get('term')
-    
-    if url_term and url_term.strip() in allowed_terms:
-        term = url_term.strip()
-    
-    url_year = request.args.get('year', type=int)
-    
-    if url_year and 2000 <= url_year <= 2100:
-        year = url_year
-
-    if not class_name:
-
-        flash(
-            'No class selected.',
-            'danger'
+            if report_settings and report_settings['current_year']
+            else datetime.now().year
         )
 
-        cur.close()
+        if term not in allowed_terms:
+            term = 'Term 1'
 
-        return redirect(
-            url_for('teacher_pupils')
+        # Optional URL overrides.
+        url_term = request.args.get('term')
+
+        if url_term and url_term.strip() in allowed_terms:
+            term = url_term.strip()
+
+        url_year = request.args.get('year', type=int)
+
+        if url_year and 2000 <= url_year <= 2100:
+            year = url_year
+
+        # ========================================================
+        # SCHOOL DETAILS
+        # ========================================================
+
+        cur.execute(
+            """
+            SELECT
+                school_name,
+                school_address,
+                school_phone,
+                school_email,
+                logo_url,
+                next_term_begins,
+                next_term_ends,
+                headteacher_stamp
+            FROM school_settings
+            WHERE id = 1
+            """
         )
 
-    # ============================================================
-    # GET SCHOOL SETTINGS
-    # ============================================================
-
-    cur.execute(
-        """
-        SELECT
-            school_name,
-            school_address,
-            school_phone,
-            school_email,
-            logo_url,
-            next_term_begins,
-            next_term_ends,
-            headteacher_stamp
-        FROM school_settings
-        WHERE id=1
-        """
-    )
-
-    school = cur.fetchone()
-
-    if school:
+        school = cur.fetchone() or {}
 
         school_name = (
-            school['school_name']
-            or 'YOUR SCHOOL NAME'
+            school.get('school_name') or 'YOUR SCHOOL NAME'
         )
 
-        school_address = (
-            school['school_address']
-            or ''
-        )
+        school_address = school.get('school_address') or ''
+        school_phone = school.get('school_phone') or ''
+        school_email = school.get('school_email') or ''
 
-        school_phone = (
-            school['school_phone']
-            or ''
-        )
-
-        school_email = (
-            school['school_email']
-            or ''
-        )
-        if school['logo_url']:
-            school_logo_url = url_for(
+        school_logo_url = (
+            url_for(
                 'static',
                 filename='uploads/' + school['logo_url']
             )
-        else:
-            school_logo_url = url_for(
+            if school.get('logo_url')
+            else url_for(
                 'static',
                 filename='images/logo.png'
             )
-
-        next_term_begins = (
-            school['next_term_begins']
         )
 
-        next_term_ends = (
-            school['next_term_ends']
-        )
+        next_term_begins = school.get('next_term_begins')
+        next_term_ends = school.get('next_term_ends')
 
         stamp_url = (
             url_for(
                 'static',
-                filename=
-                'uploads/' +
-                school['headteacher_stamp']
+                filename='uploads/' + school['headteacher_stamp']
             )
-            if school['headteacher_stamp']
+            if school.get('headteacher_stamp')
             else None
         )
 
-    else:
-
-        school_name = 'YOUR SCHOOL NAME'
-        school_address = ''
-        school_phone = ''
-        school_email = ''
-
-        school_logo_url = url_for(
-            'static',
-            filename='images/logo.png'
-        )
-
-        next_term_begins = None
-        next_term_ends = None
-        stamp_url = None
-
-    # ============================================================
-    # GET PUPILS
-    # ============================================================
-
-    cur.execute(
-        """
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            lin,
-            photo_path
-        FROM pupils
-        WHERE class=%s
-        ORDER BY full_name
-        """,
-        (class_name,)
-    )
-
-    pupils = cur.fetchall()
-
-    reports = []
-
-    # ============================================================
-    # BUILD REPORT FOR EACH PUPIL
-    # ============================================================
-
-    for pupil in pupils:
-
-        pupil_id = pupil['pupil_id']
-
-        full_name = pupil['full_name']
-
-        pupil_class = pupil['class']
-
-        lin = pupil['lin']
-
-        photo_url = get_photo_url(
-            pupil['photo_path']
-        )
-
         # ========================================================
-        # DETERMINE A-LEVEL
+        # GET PUPILS IN THE SELECTED CLASS
         # ========================================================
 
-        class_upper = str(
-            pupil_class or ''
-        ).strip().upper()
-
-        normalized_class = (
-            class_upper
-            .replace('.', '')
-            .replace(' ', '')
-            .replace('-', '')
-            .replace("'", '')
-            .replace('"', '')
+        cur.execute(
+            """
+            SELECT
+                pupil_id,
+                full_name,
+                class,
+                lin,
+                photo_path
+            FROM pupils
+            WHERE class = %s
+            ORDER BY full_name
+            """,
+            (class_name,)
         )
 
-        is_alevel = (
-            normalized_class.startswith('S5')
-            or
-            normalized_class.startswith('S6')
-            or
-            normalized_class in [
-                'ALEVEL',
-                'ADVANCEDLEVEL',
-                'ADVANCEDLEVELS'
-            ]
-        )
+        pupils = cur.fetchall()
+        reports = []
 
         # ========================================================
-        # A-LEVEL REPORT
+        # BUILD EACH PUPIL'S NURSERY / PRIMARY REPORT
         # ========================================================
 
-        if is_alevel:
+        for pupil in pupils:
+
+            pupil_id = pupil['pupil_id']
+            full_name = pupil['full_name']
+            pupil_class = pupil['class']
+            lin = pupil['lin']
+
+            photo_url = get_photo_url(
+                pupil['photo_path']
+            )
+
+            # ====================================================
+            # GET BOT, MOT AND EOT MARKS
+            # ====================================================
 
             cur.execute(
                 """
                 SELECT
                     subject,
-                    paper1,
-                    paper2,
+                    bot,
+                    mot,
+                    eot,
                     final_mark,
                     grade,
-                    points,
+                    aggregate,
                     teacher_initials
                 FROM marks
-                WHERE pupil_id=%s
-                AND term=%s
-                AND year=%s
+                WHERE pupil_id = %s
+                  AND term = %s
+                  AND year = %s
                 ORDER BY subject
                 """,
                 (
@@ -8813,374 +5964,98 @@ def print_all_report_cards():
                     year
                 )
             )
+
             raw_marks = cur.fetchall()
-        
-            marks = [
-                m
-                for m in raw_marks
-                if any(
-                    m[field] not in [None, '']
-                    for field in [
-                        'paper1',
-                        'paper2',
-                        'final_mark',
-                        'grade',
-                        'points'
-                    ]
-                )
-            ]
-            # ----------------------------------------------------
-            # TOTAL POINTS
-            # ----------------------------------------------------
-
-            total_points = sum(
-                float(m['points'])
-                for m in marks
-                if m['points'] is not None
-            )
-
-            # ----------------------------------------------------
-            # A-LEVEL COMMENTS
-            # ----------------------------------------------------
-
-            teacher_comment = (
-                get_alevel_class_teacher_comment(
-                    total_points
-                )
-            )
-
-            headteacher_comment = (
-                get_alevel_headteacher_comment(
-                    total_points
-                )
-            )
-
-            # ----------------------------------------------------
-            # ADD REPORT
-            # ----------------------------------------------------
-
-            reports.append(
-                {
-                    'pupil_id': pupil_id,
-                    'full_name': full_name,
-                    'class_name': pupil_class,
-                    'lin': lin,
-                    'photo_url': photo_url,
-
-                    'is_alevel': True,
-
-                    'marks': marks,
-
-                    'total_points': total_points,
-
-                    'teacher_comment':
-                        teacher_comment,
-
-                    'headteacher_comment':
-                        headteacher_comment
-                }
-            )
-
-        # ========================================================
-        # O-LEVEL REPORT
-        # ========================================================
-
-        else:
-
-            cur.execute(
-                """
-                SELECT
-                    subject,
-                    ai1,
-                    ai2,
-                    ai3,
-                    ai_average,
-                    ai_contribution,
-                    eot_score,
-                    total_score,
-                    grade,
-                    identifier,
-                    descriptor,
-                    teacher_initials
-                FROM marks
-                WHERE pupil_id=%s
-                AND term=%s
-                AND year=%s
-                ORDER BY subject
-                """,
-                (
-                    pupil_id,
-                    term,
-                    year
-                )
-            )
-            raw_marks = cur.fetchall()
-
             marks = []
-            
-            
+
+            # ====================================================
+            # CALCULATE SUBJECT RESULTS
+            # ====================================================
+
             for m in raw_marks:
-            
-                # =====================================================
-                # SKIP SUBJECT IF NO MARKS HAVE BEEN ENTERED
-                # =====================================================
-            
-                if (
-                    m['ai1'] in [None, '']
-                    and m['ai2'] in [None, '']
-                    and m['ai3'] in [None, '']
-                    and m['eot_score'] in [None, '']
-                ):
+
+                bot = m['bot']
+                mot = m['mot']
+                eot = m['eot']
+
+                entered_scores = [
+                    float(score)
+                    for score in (bot, mot, eot)
+                    if score is not None and score != ''
+                ]
+
+                # Skip subjects with no marks entered.
+                if not entered_scores:
                     continue
-            
-                ai_scores = []
 
-                if m['ai1'] not in [None, '']:
-                    ai_scores.append(
-                        float(m['ai1'])
-                    )
-
-                if m['ai2'] not in [None, '']:
-                    ai_scores.append(
-                        float(m['ai2'])
-                    )
-
-                if m['ai3'] not in [None, '']:
-                    ai_scores.append(
-                        float(m['ai3'])
-                    )
-
-                # AI AVERAGE
-                ai_average = (
-                    sum(ai_scores) / len(ai_scores)
-                    if ai_scores
-                    else 0
-                )
-
-                # AI CONTRIBUTION OUT OF 20
-                ai_contribution = (
-                    (ai_average / 3) * 20
-                    if ai_average > 0
-                    else 0
-                )
-
-                # EOT OUT OF 80
-                eot_score = m['eot_score']
-
-                eot_contribution = (
-                    max(
-                        0,
-                        min(
-                            float(eot_score),
-                            80
-                        )
-                    )
-                    if eot_score is not None
-                    else 0
-                )
-
-                # TOTAL OUT OF 100
-                total_score = (
-                    ai_contribution +
-                    eot_contribution
-                )
-                grade, descriptor = get_grade_and_descriptor(total_score)
-
-                # IDENTIFIER OUT OF 3
-                identifier = round(
-                    (total_score / 100) * 3,
+                # Average the entered BOT, MOT and EOT marks.
+                final_mark = round(
+                    sum(entered_scores) / len(entered_scores),
                     2
                 )
 
-                marks.append(
-                    {
-                        'subject': m['subject'],
+                marks.append({
+                    'subject': m['subject'],
+                    'bot': bot,
+                    'mot': mot,
+                    'eot': eot,
+                    'final_mark': final_mark,
+                    'grade': m['grade'],
+                    'aggregate': m['aggregate'],
+                    'teacher_initials': m['teacher_initials']
+                })
 
-                        'ai1': m['ai1'],
-
-                        'ai2': m['ai2'],
-
-                        'ai3': m['ai3'],
-
-                        'ai_average': round(
-                            ai_average,
-                            2
-                        ),
-
-                        'ai_contribution': round(
-                            ai_contribution,
-                            2
-                        ),
-
-                        'eot_score': eot_score,
-
-                        'total_score': round(
-                            total_score,
-                            2
-                        ),
-
-                        'grade': grade,
-
-                        'identifier': identifier,
-
-                        'descriptor': descriptor,
-
-                        'teacher_initials':
-                            m['teacher_initials']
-                    }
-                )
-
-            # ----------------------------------------------------
+            # ====================================================
             # GENERAL AVERAGE
-            # ----------------------------------------------------
+            # ====================================================
 
             valid_marks = [
-                m
-                for m in marks
-                if m['total_score'] is not None
-                and float(m['total_score']) > 0
+                m for m in marks
+                if m['final_mark'] is not None
             ]
 
-            total_final = sum(
-                float(m['total_score'])
+            total_marks = sum(
+                m['final_mark']
                 for m in valid_marks
             )
 
-            count = len(valid_marks)
+            subject_count = len(valid_marks)
 
             general_average = (
-                total_final / count
-                if count > 0
+                round(total_marks / subject_count, 2)
+                if subject_count > 0
                 else 0
             )
 
-            # ----------------------------------------------------
-            # GENERAL IDENTIFIER
-            # ----------------------------------------------------
-
-            general_identifier = round(
-                (general_average / 100) * 3,
-                2
-            )
-            general_grade, general_descriptor = get_grade_and_descriptor(general_average)
-
-            # ----------------------------------------------------
-            # O-LEVEL COMMENTS
-            # ----------------------------------------------------
-
-            teacher_comment = (
-                get_olevel_class_teacher_comment(
-                    general_identifier
-                )
-            )
-
-            headteacher_comment = (
-                get_olevel_headteacher_comment(
-                    general_identifier
-                )
-            )
-
-            # ----------------------------------------------------
+            # ====================================================
             # ADD REPORT
-            # ----------------------------------------------------
+            # ====================================================
 
-            reports.append(
-                {
-                    'pupil_id': pupil_id,
-                    'full_name': full_name,
-                    'class_name': pupil_class,
-                    'lin': lin,
-                    'photo_url': photo_url,
+            reports.append({
+                'pupil_id': pupil_id,
+                'full_name': full_name,
+                'class_name': pupil_class,
+                'lin': lin,
+                'photo_url': photo_url,
 
-                    'is_alevel': False,
+                'marks': marks,
 
-                    'marks': marks,
+                'total_marks': round(total_marks, 2),
+                'subject_count': subject_count,
+                'general_average': general_average
+            })
 
-                    'general_average':
-                        round(
-                            general_average,
-                            2
-                        ),
-
-                    'general_grade':
-                        general_grade,
-
-                    'general_descriptor':
-                        general_descriptor,
-
-                    'general_identifier':
-                        general_identifier,
-
-                    'avg_out_of_3':
-                        general_identifier,
-
-                    'teacher_comment':
-                        teacher_comment,
-
-                    'headteacher_comment':
-                        headteacher_comment
-                }
-            )
-
-    # ============================================================
-    # CLOSE DATABASE
-    # ============================================================
-
-    cur.close()
-
-    # ============================================================
-    # CHOOSE PRINT TEMPLATE
-    # ============================================================
-    #
-    # IMPORTANT:
-    #
-    # The class being printed is either A-Level OR O-Level.
-    # Therefore we choose the correct template here.
-    #
-    # This prevents A-Level pupils from being sent to
-    # the O-Level print template.
-    # ============================================================
-
-    class_upper = str(
-        class_name or ''
-    ).strip().upper()
-
-    normalized_class = (
-        class_upper
-        .replace('.', '')
-        .replace(' ', '')
-        .replace('-', '')
-        .replace("'", '')
-        .replace('"', '')
-    )
-
-    is_alevel_class = (
-        normalized_class.startswith('S5')
-        or
-        normalized_class.startswith('S6')
-        or
-        normalized_class in [
-            'ALEVEL',
-            'ADVANCEDLEVEL',
-            'ADVANCEDLEVELS'
-        ]
-    )
-
-    # ============================================================
-    # A-LEVEL PRINT TEMPLATE
-    # ============================================================
-
-    if is_alevel_class:
+        # ========================================================
+        # PRINT NURSERY / PRIMARY REPORT CARDS
+        # ========================================================
 
         return render_template(
-            'teacher/print_all_report_cards_alevel.html',
+            'teacher/print_all_report_cards_primary.html',
 
             reports=reports,
 
             class_name=class_name,
-
             term=term,
-
             year=year,
 
             school_name=school_name,
@@ -9195,335 +6070,9 @@ def print_all_report_cards():
             stamp_url=stamp_url
         )
 
-    # ============================================================
-    # O-LEVEL PRINT TEMPLATE
-    # ============================================================
-
-    return render_template(
-        'teacher/print_all_report_cards.html',
-
-        reports=reports,
-
-        class_name=class_name,
-
-        term=term,
-
-        year=year,
-
-        school_name=school_name,
-        school_address=school_address,
-        school_phone=school_phone,
-        school_email=school_email,
-        school_logo_url=school_logo_url,
-
-        next_term_begins=next_term_begins,
-        next_term_ends=next_term_ends,
-
-        stamp_url=stamp_url
-    )
-
-@app.route('/dos/pupil_id/<pupil_id>')
-def pupil_id_card(pupil_id):
-
-    if not check_permission(['dos', 'admin', 'headteacher']):
-        abort(403)
-
-    # ================= PUPIL =================
-    cur = get_db().cursor()
-
-    cur.execute(
-        """
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            sex,
-            photo_path,
-            pupil_signature,
-            qr_token
-        FROM pupils
-        WHERE pupil_id=%s
-        """,
-        (pupil_id,)
-    )
-
-    pupil = cur.fetchone()
-
-    if not pupil:
+    finally:
         cur.close()
-        flash('Pupil not found.', 'danger')
-        return redirect(request.referrer or url_for('dashboard'))
-
-    # ================= SCHOOL SETTINGS =================
-    cur.execute(
-        """
-        SELECT
-            school_name,
-            school_address,
-            school_phone,
-            school_email,
-            school_website,
-            logo_url,
-            headteacher_stamp
-        FROM school_settings
-        WHERE id=1
-        """
-    )
-
-    settings = cur.fetchone()
-    cur.close()
-
-    if not settings:
-        flash('School settings have not been configured.', 'danger')
-        return redirect(request.referrer or url_for('dashboard'))
-
-    # ================= DATES =================
-    issue_date = date.today()
-
-    class_name = (pupil['class'] or '').strip().upper()
-
-    # Remove spaces, dots and hyphens.
-    normalized_class = re.sub(
-        r'[^A-Z0-9]',
-        '',
-        class_name
-    )
-
-    # S5/S6 = A-Level
-    a_level_classes = {
-        'S5',
-        'S6',
-        'SENIOR5',
-        'SENIOR6'
-    }
-
-    if normalized_class in a_level_classes:
-        validity_years = 2
-    else:
-        validity_years = 4
-
-    expiry_date = (
-        issue_date
-        + relativedelta(years=validity_years)
-        - relativedelta(days=1)
-    )
-
-    # ================= QR CODE =================
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,
-        border=2
-    )
-
-    # IMPORTANT:
-    # The QR contains ONLY the existing qr_token.
-    qr.add_data(pupil['qr_token'])
-    qr.make(fit=True)
-
-    qr_image = qr.make_image(
-        fill_color="black",
-        back_color="white"
-    )
-
-    qr_buffer = io.BytesIO()
-    qr_image.save(
-        qr_buffer,
-        format='PNG'
-    )
-
-    qr_base64 = base64.b64encode(
-        qr_buffer.getvalue()
-    ).decode('utf-8')
-
-    # ================= RENDER CARD =================
-    return render_template(
-        'dos/pupil_id_card.html',
-        pupil=pupil,
-        settings=settings,
-        issue_date=issue_date,
-        expiry_date=expiry_date,
-        qr_base64=qr_base64
-    )
-
-@app.route('/dos/pupil-ids/print-backs')
-def print_pupil_id_backs():
-
-    if not check_permission(['dos', 'admin', 'headteacher']):
-        abort(403)
-
-    cur = get_db().cursor()
-
-    # ============================================================
-    # GET ALL PUPILS
-    # ============================================================
-
-    cur.execute("""
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            sex,
-            qr_token
-        FROM pupils
-        ORDER BY class, full_name
-    """)
-
-    pupils = cur.fetchall()
-
-
-    # ============================================================
-    # SCHOOL SETTINGS
-    # ============================================================
-
-    cur.execute("""
-        SELECT
-            school_name,
-            school_address,
-            school_phone,
-            school_email,
-            school_website,
-            logo_url,
-            headteacher_stamp
-        FROM school_settings
-        WHERE id=1
-    """)
-
-    settings = cur.fetchone()
-
-    cur.close()
-
-
-    # ============================================================
-    # CHECK SETTINGS
-    # ============================================================
-
-    if not settings:
-
-        flash(
-            'School settings have not been configured.',
-            'danger'
-        )
-
-        return redirect(
-            request.referrer or url_for('dashboard')
-        )
-
-
-    # ============================================================
-    # CHECK PUPILS
-    # ============================================================
-
-    if not pupils:
-
-        flash(
-            'No pupils were found.',
-            'danger'
-        )
-
-        return redirect(
-            request.referrer or url_for('dashboard')
-        )
-
-
-    # ============================================================
-    # GENERATE QR IMAGE FOR EACH PUPIL
-    #
-    # IMPORTANT:
-    # We use the EXISTING qr_token.
-    #
-    # We do NOT create a new token.
-    # ============================================================
-
-    prepared_pupils = []
-
-
-    for pupil in pupils:
-
-        qr_base64 = None
-
-
-        if pupil['qr_token']:
-
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_H,
-                box_size=10,
-                border=2
-            )
-
-            qr.add_data(pupil['qr_token'])
-
-            qr.make(fit=True)
-
-
-            qr_image = qr.make_image(
-                fill_color="black",
-                back_color="white"
-            )
-
-
-            qr_buffer = io.BytesIO()
-
-
-            qr_image.save(
-                qr_buffer,
-                format='PNG'
-            )
-
-
-            qr_base64 = base64.b64encode(
-                qr_buffer.getvalue()
-            ).decode('utf-8')
-
-
-        # Add QR image to pupil record
-        pupil['qr_base64'] = qr_base64
-
-
-        prepared_pupils.append(pupil)
-
-
-    # ============================================================
-    # DIVIDE PUPILS INTO A4 PAGES
-    #
-    # 10 ID BACKS PER A4
-    # 2 COLUMNS × 5 ROWS
-    # ============================================================
-
-    pupils_per_page = 10
-
-    pages = []
-
-
-    for i in range(
-        0,
-        len(prepared_pupils),
-        pupils_per_page
-    ):
-
-        pages.append(
-            prepared_pupils[
-                i:i + pupils_per_page
-            ]
-        )
-
-
-    # ============================================================
-    # RENDER
-    # ============================================================
-
-    return render_template(
-        'dos/pupil_id_backs.html',
-
-        pupils=prepared_pupils,
-
-        pages=pages,
-
-        settings=settings,
-
-        total_pupils=len(prepared_pupils)
-    )
+        db.close()
 
 @app.route('/bursar/dashboard')
 def bursar_dashboard():
@@ -9586,11 +6135,6 @@ def bursar_pupils():
         ''
     ).strip()
     
-    programme_filter = request.args.get(
-        'programme',
-        ''
-    ).strip()
-    
     residence_filter = request.args.get(
         'residence',
         ''
@@ -9614,7 +6158,6 @@ def bursar_pupils():
             pupil_id,
             full_name,
             class,
-            programme,
             residence,
             parent_phone,
             fees_total,
@@ -9671,22 +6214,6 @@ def bursar_pupils():
         params.append(
             class_filter
         )
-    
-    
-    # =====================================================
-    # PROGRAMME FILTER
-    # =====================================================
-    
-    if programme_filter:
-    
-        query += """
-            AND programme=%s
-        """
-    
-        params.append(
-            programme_filter
-        )
-    
     
     # =====================================================
     # RESIDENCE FILTER
@@ -9762,8 +6289,6 @@ def bursar_pupils():
     
         class_filter=class_filter,
     
-        programme_filter=programme_filter,
-    
         residence_filter=residence_filter
     )
 # =========================================================
@@ -9775,6 +6300,8 @@ def bursar_pupil_classification():
 
     if not check_permission(['bursar']):
         abort(403)
+
+    import re
 
     year = request.args.get(
         'year',
@@ -9800,130 +6327,207 @@ def bursar_pupil_classification():
     db = get_db_dict()
     cur = db.cursor()
 
-    # =====================================================
-    # GET PUPILS
-    # =====================================================
+    try:
+        # =====================================================
+        # CLASSIFICATION: NURSERY AND PRIMARY ONLY
+        # =====================================================
 
-    query = """
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            parent_phone,
-            programme,
-            residence,
-            fees_total,
-            fees_paid,
-            fees_balance
-        FROM pupils
-        WHERE 1=1
-    """
+        def get_class_order(class_name):
+            name = re.sub(
+                r'\s+',
+                ' ',
+                (class_name or '').strip()
+            ).upper()
 
-    params = []
+            compact = re.sub(r'[\s.]', '', name)
 
-    if search:
+            nursery_order = {
+                'BABY': 1,
+                'BABY CLASS': 1,
+                'MIDDLE': 2,
+                'MIDDLE CLASS': 2,
+                'TOP': 3,
+                'TOP CLASS': 3
+            }
 
-        query += """
-            AND (
-                pupil_id ILIKE %s
-                OR full_name ILIKE %s
+            if name in nursery_order:
+                return (0, nursery_order[name], name)
+
+            # Accept PRIMARY 1, PRIMARY 1A, P1, P.1, P1A, etc.
+            match = re.fullmatch(
+                r'PRIMARY\s*([1-7])\s*[A-Z]*',
+                name
             )
+
+            if match:
+                return (1, int(match.group(1)), name)
+
+            match = re.fullmatch(
+                r'P\.?\s*([1-7])\s*[A-Z]*',
+                name
+            )
+
+            if match:
+                return (1, int(match.group(1)), name)
+
+            match = re.fullmatch(
+                r'P([1-7])[A-Z]*',
+                compact
+            )
+
+            if match:
+                return (1, int(match.group(1)), name)
+
+            return None
+
+        # =====================================================
+        # GET NURSERY AND PRIMARY PUPILS
+        # =====================================================
+
+        query = """
+            SELECT
+                pupil_id,
+                full_name,
+                class,
+                parent_phone,
+                residence,
+                fees_total,
+                fees_paid,
+                fees_balance
+            FROM pupils
+            WHERE class IS NOT NULL
+              AND TRIM(class) != ''
         """
 
-        pattern = f"%{search}%"
+        params = []
 
-        params.extend([
-            pattern,
-            pattern
-        ])
+        if search:
+            query += """
+                AND (
+                    pupil_id::text ILIKE %s
+                    OR full_name ILIKE %s
+                )
+            """
 
-    if class_filter:
+            pattern = f"%{search}%"
+            params.extend([pattern, pattern])
 
-        query += """
-            AND class = %s
-        """
+        if class_filter:
+            query += """
+                AND class = %s
+            """
+            params.append(class_filter)
 
-        params.append(class_filter)
+        cur.execute(query, tuple(params))
+        all_pupils = cur.fetchall()
 
-    query += """
-        ORDER BY
-            class,
-            full_name
-    """
+        # Keep only Nursery and Primary pupils
+        pupils = [
+            pupil for pupil in all_pupils
+            if get_class_order(pupil.get('class')) is not None
+        ]
 
-    cur.execute(
-        query,
-        tuple(params)
-    )
+        # Sort Nursery first, then Primary 1 through Primary 7
+        pupils.sort(
+            key=lambda pupil: (
+                get_class_order(pupil.get('class')),
+                (pupil.get('full_name') or '').lower()
+            )
+        )
 
-    pupils = cur.fetchall()
+        # =====================================================
+        # GET NURSERY AND PRIMARY CLASSES ONLY
+        # =====================================================
 
-    # =====================================================
-    # GET CLASSES
-    # =====================================================
+        cur.execute("""
+            SELECT DISTINCT class
+            FROM pupils
+            WHERE class IS NOT NULL
+              AND TRIM(class) != ''
+        """)
 
-    cur.execute("""
-        SELECT DISTINCT class
-        FROM pupils
-        WHERE class IS NOT NULL
-        AND class != ''
-        ORDER BY class
-    """)
+        all_classes = [
+            row['class']
+            for row in cur.fetchall()
+            if get_class_order(row.get('class')) is not None
+        ]
 
-    classes = [
-        row['class']
-        for row in cur.fetchall()
-    ]
+        classes = sorted(
+            all_classes,
+            key=get_class_order
+        )
 
-    # =====================================================
-    # GET FEE STRUCTURES
-    # =====================================================
+        # =====================================================
+        # GET NURSERY AND PRIMARY FEE STRUCTURES
+        # =====================================================
 
-    cur.execute("""
-        SELECT
-            id,
-            level,
-            programme,
-            residence,
-            term,
-            year,
-            amount,
-            description
-        FROM pupil_fee_structure
-        WHERE term = %s
-        AND year = %s
-        ORDER BY
-            CASE level
-                WHEN 'S.1' THEN 1
-                WHEN 'S.2' THEN 2
-                WHEN 'S.3' THEN 3
-                WHEN 'S.4' THEN 4
-                WHEN 'S.5' THEN 5
-                WHEN 'S.6' THEN 6
-                ELSE 7
-            END,
-            programme,
-            residence
-    """, (
-        term,
-        year
-    ))
+        cur.execute("""
+            SELECT
+                id,
+                level,
+                residence,
+                term,
+                year,
+                amount,
+                description
+            FROM pupil_fee_structure
+            WHERE term = %s
+              AND year = %s
+        """, (term, year))
 
-    fee_structures = cur.fetchall()
+        all_fee_structures = cur.fetchall()
 
-    cur.close()
+        # Keep fee structures whose level is Nursery or Primary.
+        # This supports levels such as Baby, Middle, Top,
+        # Nursery, Primary 1, P.1, P1, and Primary 7.
+        fee_structures = []
 
-    return render_template(
-        'bursar/pupil_classification.html',
-        pupils=pupils,
-        classes=classes,
-        fee_structures=fee_structures,
-        year=year,
-        term=term,
-        search=search,
-        class_filter=class_filter
-    )
+        for structure in all_fee_structures:
+            level = (structure.get('level') or '').strip()
+            normalized_level = level.upper()
 
+            is_nursery = normalized_level in {
+                'BABY',
+                'BABY CLASS',
+                'MIDDLE',
+                'MIDDLE CLASS',
+                'TOP',
+                'TOP CLASS',
+                'NURSERY'
+            }
+
+            is_primary = (
+                get_class_order(level) is not None
+                and get_class_order(level)[0] == 1
+            ) or normalized_level == 'PRIMARY'
+
+            if is_nursery or is_primary:
+                fee_structures.append(structure)
+
+        fee_structures.sort(
+            key=lambda item: (
+                get_class_order(item.get('level'))
+                if get_class_order(item.get('level')) is not None
+                else (0, 0, (item.get('level') or '').upper()),
+                (item.get('residence') or '').lower()
+            )
+        )
+
+        return render_template(
+            'bursar/pupil_classification.html',
+            pupils=pupils,
+            classes=classes,
+            fee_structures=fee_structures,
+            year=year,
+            term=term,
+            search=search,
+            class_filter=class_filter
+        )
+
+    finally:
+        cur.close()
+        db.close()
+        
 @app.route(
     '/bursar/pupils/classification/update',
     methods=['POST']
@@ -9933,15 +6537,13 @@ def bursar_pupil_classification_update():
     if not check_permission(['bursar']):
         abort(403)
 
+    import re
+
     pupil_id = request.form.get(
         'pupil_id',
         ''
     ).strip()
 
-    programme = request.form.get(
-        'programme',
-        ''
-    ).strip()
 
     residence = request.form.get(
         'residence',
@@ -9960,11 +6562,62 @@ def bursar_pupil_classification_update():
     )
 
     # =====================================================
+    # CLASSIFY NURSERY AND PRIMARY CLASSES
+    # =====================================================
+
+    def get_class_level(class_name):
+
+        name = re.sub(
+            r'\s+',
+            ' ',
+            (class_name or '').strip()
+        ).upper()
+
+        compact = re.sub(r'[\s.]', '', name)
+
+        nursery_levels = {
+            'BABY': 'Baby',
+            'BABY CLASS': 'Baby',
+            'MIDDLE': 'Middle',
+            'MIDDLE CLASS': 'Middle',
+            'TOP': 'Top',
+            'TOP CLASS': 'Top'
+        }
+
+        if name in nursery_levels:
+            return nursery_levels[name]
+
+        match = re.fullmatch(
+            r'PRIMARY\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        match = re.fullmatch(
+            r'P\.?\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        match = re.fullmatch(
+            r'P([1-7])[A-Z]*',
+            compact
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        return None
+
+    # =====================================================
     # BASIC VALIDATION
     # =====================================================
 
     if not pupil_id:
-
         flash(
             'Pupil ID is required.',
             'danger'
@@ -9978,31 +6631,7 @@ def bursar_pupil_classification_update():
             )
         )
 
-    if programme not in [
-        'USE',
-        'Non-USE',
-        'UPOLET',
-        'Non-UPOLET'
-    ]:
-
-        flash(
-            'Invalid programme selected.',
-            'danger'
-        )
-
-        return redirect(
-            url_for(
-                'bursar_pupil_classification',
-                year=year,
-                term=term
-            )
-        )
-
-    if residence not in [
-        'Day',
-        'Boarding'
-    ]:
-
+    if residence not in ['Day', 'Boarding']:
         flash(
             'Please select Day or Boarding.',
             'danger'
@@ -10016,11 +6645,14 @@ def bursar_pupil_classification_update():
             )
         )
 
+    # Programme is optional for Nursery and Primary.
+    # If provided, accept it as a text value.
+    # Clear it when the form submits an empty value.
+
     db = get_db_dict()
     cur = db.cursor()
 
     try:
-
         # =================================================
         # GET PUPIL
         # =================================================
@@ -10032,14 +6664,11 @@ def bursar_pupil_classification_update():
                 class
             FROM pupils
             WHERE pupil_id = %s
-        """, (
-            pupil_id,
-        ))
+        """, (pupil_id,))
 
         pupil = cur.fetchone()
 
         if not pupil:
-
             flash(
                 'Pupil not found.',
                 'danger'
@@ -10054,24 +6683,17 @@ def bursar_pupil_classification_update():
             )
 
         # =================================================
-        # DETERMINE LEVEL
-        #
-        # S.1A -> S.1
-        # S.1B -> S.1
-        # S.3A -> S.3
-        # S.5  -> S.5
-        # S.6  -> S.6
+        # ALLOW NURSERY AND PRIMARY ONLY
         # =================================================
 
-        level = get_pupil_level(
-            pupil['class']
+        level = get_class_level(
+            pupil.get('class')
         )
 
         if not level:
-
             flash(
-                f"Could not determine the level from "
-                f"class {pupil['class']}.",
+                f"Class {pupil.get('class')} is not a "
+                f"recognised Nursery or Primary class.",
                 'danger'
             )
 
@@ -10084,55 +6706,15 @@ def bursar_pupil_classification_update():
             )
 
         # =================================================
-        # VALIDATE PROGRAMME AGAINST LEVEL
-        # =================================================
-
-        if level in [
-            'S.1',
-            'S.2',
-            'S.3',
-            'S.4'
-        ]:
-
-            valid_programmes = [
-                'USE',
-                'Non-USE'
-            ]
-
-        else:
-
-            valid_programmes = [
-                'UPOLET',
-                'Non-UPOLET'
-            ]
-
-        if programme not in valid_programmes:
-
-            flash(
-                f'{programme} is not valid for {level}.',
-                'danger'
-            )
-
-            return redirect(
-                url_for(
-                    'bursar_pupil_classification',
-                    year=year,
-                    term=term
-                )
-            )
-
-        # =================================================
-        # SAVE PROGRAMME + RESIDENCE
+        # SAVE PROGRAMME AND RESIDENCE
         # =================================================
 
         cur.execute("""
             UPDATE pupils
             SET
-                programme = %s,
                 residence = %s
             WHERE pupil_id = %s
         """, (
-            programme,
             residence,
             pupil_id
         ))
@@ -10140,15 +6722,12 @@ def bursar_pupil_classification_update():
         db.commit()
 
     except Exception as e:
-
         db.rollback()
 
         flash(
             f'Could not save pupil classification: {e}',
             'danger'
         )
-
-        cur.close()
 
         return redirect(
             url_for(
@@ -10159,26 +6738,36 @@ def bursar_pupil_classification_update():
         )
 
     finally:
-
         cur.close()
-    success, message = apply_pupil_fee_structure(
-        pupil_id,
-        term,
-        year
-    )
+        db.close()
 
-    if success:
+    # =====================================================
+    # APPLY THE PUPIL'S FEE STRUCTURE
+    # =====================================================
 
-        flash(
-            f"{pupil['full_name']}: {message}",
-            'success'
+    try:
+        success, message = apply_pupil_fee_structure(
+            pupil_id,
+            term,
+            year
         )
 
-    else:
+        if success:
+            flash(
+                f"{pupil['full_name']}: {message}",
+                'success'
+            )
+        else:
+            flash(
+                f"Classification saved, but fee structure "
+                f"could not be applied: {message}",
+                'warning'
+            )
 
+    except Exception as e:
         flash(
-            f"Classification saved, but fee structure "
-            f"could not be applied: {message}",
+            f"Classification saved, but applying the fee "
+            f"structure failed: {e}",
             'warning'
         )
 
@@ -10189,370 +6778,7 @@ def bursar_pupil_classification_update():
             term=term
         )
     )
-
-
-@app.route('/bursar/pupil/<pupil_id>')
-def bursar_pupil_detail(pupil_id):
-
-    if not check_permission(['bursar']):
-        abort(403)
-
-    db = get_db_dict()
-    cur = db.cursor()
-
-    # =====================================================
-    # GET PUPIL
-    # =====================================================
-
-    cur.execute("""
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            parent_phone,
-            programme,
-            residence,
-            fees_total,
-            fees_paid,
-            fees_balance
-        FROM pupils
-        WHERE pupil_id=%s
-    """, (
-        pupil_id,
-    ))
-
-    pupil = cur.fetchone()
-
-    if not pupil:
-
-        cur.close()
-
-        flash(
-            'Pupil not found.',
-            'danger'
-        )
-
-        return redirect(
-            url_for('bursar_pupils')
-        )
-
-    # =====================================================
-    # GET PAYMENT HISTORY
-    # =====================================================
-
-    cur.execute("""
-        SELECT
-            id,
-            receipt_no,
-            amount,
-            payment_date,
-            payment_method,
-            recorded_by,
-            notes
-        FROM payments
-        WHERE pupil_id=%s
-        ORDER BY
-            payment_date DESC,
-            id DESC
-    """, (
-        pupil_id,
-    ))
-
-    payments = cur.fetchall()
-
-    # =====================================================
-    # CALCULATE TOTAL PAID FROM PAYMENT RECORDS
-    # =====================================================
-
-    total_paid = sum(
-        float(p['amount'] or 0)
-        for p in payments
-    )
-
-    # =====================================================
-    # DETERMINE PUPIL LEVEL
-    #
-    # Pupils may be stored as:
-    #
-    # S.1A
-    # S.1B
-    # S.3A
-    #
-    # or as:
-    #
-    # S.3
-    # S.5
-    # S.6
-    # =====================================================
-
-    pupil_class = (
-        pupil['class'] or ''
-    ).strip().upper()
-
-    level = pupil_class
-
-    # -----------------------------------------------------
-    # STREAMED O-LEVEL PUPIL
-    #
-    # S.1A -> S.1
-    # S.2B -> S.2
-    # -----------------------------------------------------
-
-    match = re.match(
-        r'^(S\.[1-6])',
-        pupil_class
-    )
-
-    if match:
-
-        level = match.group(1)
-
-    # =====================================================
-    # PROGRAMME OPTIONS
-    # =====================================================
-
-    if level in [
-        'S.1',
-        'S.2',
-        'S.3',
-        'S.4'
-    ]:
-
-        programme_options = [
-            'USE',
-            'Non-USE'
-        ]
-
-    elif level in [
-        'S.5',
-        'S.6'
-    ]:
-
-        programme_options = [
-            'UPOLET',
-            'Non-UPOLET'
-        ]
-
-    else:
-
-        programme_options = []
-
-    programme_label = 'Programme'
-
-    # =====================================================
-    # GET SAVED CLASSIFICATION
-    # =====================================================
-
-    selected_programme = (
-        pupil['programme']
-        or ''
-    ).strip()
-
-    selected_residence = (
-        pupil['residence']
-        or ''
-    ).strip()
-
-    # =====================================================
-    # ALLOW URL VALUES TO OVERRIDE
-    #
-    # This allows the bursar to preview another
-    # classification if needed.
-    # =====================================================
-
-    url_programme = request.args.get(
-        'programme'
-    )
-
-    url_residence = request.args.get(
-        'residence'
-    )
-
-    if url_programme:
-
-        selected_programme = (
-            url_programme.strip()
-        )
-
-    if url_residence:
-
-        selected_residence = (
-            url_residence.strip()
-        )
-
-    # =====================================================
-    # TERM AND YEAR
-    # =====================================================
-
-    selected_term = request.args.get(
-        'term',
-        'Term 1'
-    ).strip()
-
-    selected_year = request.args.get(
-        'year',
-        datetime.now().year,
-        type=int
-    )
-
-    # =====================================================
-    # GET APPLICABLE FEE STRUCTURE
-    # =====================================================
-
-    applicable_fee = None
-    fee_description = None
-    fee_structure_id = None
-
-    if (
-        selected_programme
-        and selected_residence
-        and level
-    ):
-
-        cur.execute("""
-            SELECT
-                id,
-                amount,
-                description
-            FROM pupil_fee_structure
-            WHERE level=%s
-            AND programme=%s
-            AND residence=%s
-            AND term=%s
-            AND year=%s
-            LIMIT 1
-        """, (
-            level,
-            selected_programme,
-            selected_residence,
-            selected_term,
-            selected_year
-        ))
-
-        fee_record = cur.fetchone()
-
-        if fee_record:
-
-            fee_structure_id = fee_record['id']
-
-            applicable_fee = float(
-                fee_record['amount'] or 0
-            )
-
-            fee_description = (
-                fee_record['description']
-                or ''
-            )
-
-    # =====================================================
-    # STORED PUPIL FEE TOTAL
-    # =====================================================
-
-    stored_fees_total = float(
-        pupil['fees_total'] or 0
-    )
-
-    # =====================================================
-    # DETERMINE EFFECTIVE FEE TOTAL
-    #
-    # If a matching fee structure exists, use it.
-    # Otherwise use pupil's stored fees_total.
-    # =====================================================
-
-    if applicable_fee is not None:
-
-        fees_total = applicable_fee
-
-    else:
-
-        fees_total = stored_fees_total
-
-    # =====================================================
-    # CALCULATE BALANCE
-    # =====================================================
-
-    fees_balance = max(
-        fees_total - total_paid,
-        0
-    )
-
-    # =====================================================
-    # KEEP PUPIL FEE FIGURES SYNCHRONIZED
-    #
-    # Only update when the calculated values differ.
-    # =====================================================
-
-    if (
-        abs(stored_fees_total - fees_total) > 0.001
-        or
-        abs(
-            float(pupil['fees_paid'] or 0)
-            - total_paid
-        ) > 0.001
-        or
-        abs(
-            float(pupil['fees_balance'] or 0)
-            - fees_balance
-        ) > 0.001
-    ):
-
-        cur.execute("""
-            UPDATE pupils
-            SET
-                fees_total=%s,
-                fees_paid=%s,
-                fees_balance=%s
-            WHERE pupil_id=%s
-        """, (
-            fees_total,
-            total_paid,
-            fees_balance,
-            pupil_id
-        ))
-
-        db.commit()
-
-    cur.close()
-
-    # =====================================================
-    # RETURN TEMPLATE
-    # =====================================================
-
-    return render_template(
-        'bursar/pupil_detail.html',
-
-        pupil=pupil,
-
-        payments=payments,
-
-        total_paid=total_paid,
-
-        fees_total=fees_total,
-
-        fees_balance=fees_balance,
-
-        applicable_fee=applicable_fee,
-
-        fee_description=fee_description,
-
-        fee_structure_id=fee_structure_id,
-
-        level=level,
-
-        programme_options=programme_options,
-
-        programme_label=programme_label,
-
-        selected_programme=selected_programme,
-
-        selected_residence=selected_residence,
-
-        selected_term=selected_term,
-
-        selected_year=selected_year
-    )
-
-
+    
 @app.route(
     '/bursar/pupil/<pupil_id>/fee-details',
     methods=['POST']
@@ -10562,11 +6788,7 @@ def bursar_pupil_fee_details(pupil_id):
     if not check_permission(['bursar']):
         abort(403)
 
-    programme = request.form.get(
-        'programme',
-        ''
-    ).strip()
-
+    import re
     residence = request.form.get(
         'residence',
         ''
@@ -10583,10 +6805,105 @@ def bursar_pupil_fee_details(pupil_id):
         type=int
     )
 
-    if not programme:
+    # =====================================================
+    # IDENTIFY NURSERY AND PRIMARY CLASSES
+    # =====================================================
 
+    def get_class_level(class_name):
+
+        name = re.sub(
+            r'\s+',
+            ' ',
+            (class_name or '').strip()
+        ).upper()
+
+        compact = re.sub(r'[\s.]', '', name)
+
+        nursery_levels = {
+            'BABY': 'Baby',
+            'BABY CLASS': 'Baby',
+            'MIDDLE': 'Middle',
+            'MIDDLE CLASS': 'Middle',
+            'TOP': 'Top',
+            'TOP CLASS': 'Top'
+        }
+
+        if name in nursery_levels:
+            return nursery_levels[name]
+
+        match = re.fullmatch(
+            r'PRIMARY\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        match = re.fullmatch(
+            r'P\.?\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        match = re.fullmatch(
+            r'P([1-7])[A-Z]*',
+            compact
+        )
+
+        if match:
+            return f"Primary {match.group(1)}"
+
+        return None
+
+    # =====================================================
+    # VALIDATE PUPIL
+    # =====================================================
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    try:
+        cur.execute("""
+            SELECT
+                pupil_id,
+                full_name,
+                class
+            FROM pupils
+            WHERE pupil_id = %s
+        """, (pupil_id,))
+
+        pupil = cur.fetchone()
+
+        if not pupil:
+            flash(
+                'Pupil not found.',
+                'danger'
+            )
+
+            return redirect(url_for('bursar_pupils'))
+
+        level = get_class_level(
+            pupil.get('class')
+        )
+
+        if not level:
+            flash(
+                'This route is only for Nursery and Primary pupils.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'bursar_pupil_detail',
+                    pupil_id=pupil_id
+                )
+            )
+
+    except Exception as e:
         flash(
-            'Please select the programme.',
+            f'Could not validate pupil: {e}',
             'danger'
         )
 
@@ -10597,11 +6914,15 @@ def bursar_pupil_fee_details(pupil_id):
             )
         )
 
-    if residence not in [
-        'Day',
-        'Boarding'
-    ]:
+    finally:
+        cur.close()
+        db.close()
 
+    # =====================================================
+    # VALIDATE RESIDENCE
+    # =====================================================
+
+    if residence not in ['Day', 'Boarding']:
         flash(
             'Please select Day or Boarding.',
             'danger'
@@ -10610,27 +6931,33 @@ def bursar_pupil_fee_details(pupil_id):
         return redirect(
             url_for(
                 'bursar_pupil_detail',
-                pupil_id=pupil_id
+                pupil_id=pupil_id,
+                term=term,
+                year=year
             )
         )
+
+    # =====================================================
+    # REDIRECT WITH SELECTED FEE DETAILS
+    # =====================================================
 
     return redirect(
         url_for(
             'bursar_pupil_detail',
             pupil_id=pupil_id,
-            programme=programme,
             residence=residence,
             term=term,
             year=year
         )
     )
 
-
 @app.route('/bursar/fees')
 def bursar_fees():
 
     if not check_permission(['bursar']):
         abort(403)
+
+    import re
 
     year = request.args.get(
         'year',
@@ -10643,43 +6970,105 @@ def bursar_fees():
         'Term 1'
     ).strip()
 
-    db = get_db()
+    # =====================================================
+    # CLASS LEVEL ORDER
+    # =====================================================
+
+    def get_level_order(level):
+
+        name = re.sub(
+            r'\s+',
+            ' ',
+            (level or '').strip()
+        ).upper()
+
+        compact = re.sub(r'[\s.]', '', name)
+
+        # Nursery classes
+        nursery_order = {
+            'BABY': 1,
+            'BABY CLASS': 1,
+            'MIDDLE': 2,
+            'MIDDLE CLASS': 2,
+            'TOP': 3,
+            'TOP CLASS': 3
+        }
+
+        if name in nursery_order:
+            return (0, nursery_order[name], name)
+
+        # Primary 1-7
+        match = re.fullmatch(
+            r'PRIMARY\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return (1, int(match.group(1)), name)
+
+        match = re.fullmatch(
+            r'P\.?\s*([1-7])\s*[A-Z]*',
+            name
+        )
+
+        if match:
+            return (1, int(match.group(1)), name)
+
+        match = re.fullmatch(
+            r'P([1-7])[A-Z]*',
+            compact
+        )
+
+        if match:
+            return (1, int(match.group(1)), name)
+
+        return None
+
+    db = get_db_dict()
     cur = db.cursor()
 
-    cur.execute("""
-        SELECT
-            id,
-            level,
-            programme,
-            residence,
-            term,
+    try:
+        # =====================================================
+        # GET NURSERY AND PRIMARY FEE STRUCTURES
+        # =====================================================
+
+        cur.execute("""
+            SELECT
+                id,
+                level,
+                residence,
+                term,
+                year,
+                amount,
+                description,
+                created_at
+            FROM pupil_fee_structure
+            WHERE year = %s
+              AND term = %s
+        """, (
             year,
-            amount,
-            description,
-            created_at
-        FROM pupil_fee_structure
-        WHERE year = %s
-        AND term = %s
-        ORDER BY
-            CASE level
-                WHEN 'S.1' THEN 1
-                WHEN 'S.2' THEN 2
-                WHEN 'S.3' THEN 3
-                WHEN 'S.4' THEN 4
-                WHEN 'S.5' THEN 5
-                WHEN 'S.6' THEN 6
-                ELSE 7
-            END,
-            programme,
-            residence
-    """, (
-        year,
-        term
-    ))
+            term
+        ))
 
-    fee_structures = cur.fetchall()
+        all_fee_structures = cur.fetchall()
 
-    cur.close()
+        # Keep only Nursery and Primary levels
+        fee_structures = [
+            fee for fee in all_fee_structures
+            if get_level_order(fee.get('level')) is not None
+        ]
+
+        # Nursery first, then Primary 1-7; Day/Boarding within each level
+        fee_structures.sort(
+            key=lambda fee: (
+                get_level_order(fee.get('level')),
+                (fee.get('residence') or '').lower()
+            )
+        )
+
+    finally:
+        cur.close()
+        db.close()
 
     return render_template(
         'bursar/fees.html',
@@ -10687,7 +7076,7 @@ def bursar_fees():
         year=year,
         term=term
     )
-
+    
 # ADD PUPIL FEE STRUCTURE
 @app.route('/bursar/fees/add', methods=['POST'])
 def bursar_fees_add():
@@ -10695,13 +7084,10 @@ def bursar_fees_add():
     if not check_permission(['bursar']):
         abort(403)
 
+    import re
+
     level = request.form.get(
         'level',
-        ''
-    ).strip().upper()
-
-    programme = request.form.get(
-        'programme',
         ''
     ).strip()
 
@@ -10731,68 +7117,74 @@ def bursar_fees_add():
         ''
     ).strip()
 
-    valid_levels = [
-        'S.1',
-        'S.2',
-        'S.3',
-        'S.4',
-        'S.5',
-        'S.6'
-    ]
+    # =====================================================
+    # NORMALIZE AND VALIDATE NURSERY / PRIMARY LEVEL
+    # =====================================================
 
-    if level not in valid_levels:
+    normalized_level = re.sub(
+        r'\s+',
+        ' ',
+        level
+    ).upper()
 
-        flash(
-            'Invalid class level selected.',
-            'danger'
-        )
+    compact_level = re.sub(
+        r'[\s.]',
+        '',
+        normalized_level
+    )
 
-        return redirect(
-            url_for(
-                'bursar_fees',
-                year=year,
-                term=term
-            )
-        )
-    if level in [
-        'S.1',
-        'S.2',
-        'S.3',
-        'S.4'
-    ]:
+    nursery_levels = {
+        'BABY': 'Baby',
+        'BABY CLASS': 'Baby',
+        'MIDDLE': 'Middle',
+        'MIDDLE CLASS': 'Middle',
+        'TOP': 'Top',
+        'TOP CLASS': 'Top'
+    }
 
-        valid_programmes = [
-            'USE',
-            'Non-USE'
-        ]
+    if normalized_level in nursery_levels:
+        level = nursery_levels[normalized_level]
 
     else:
-
-        valid_programmes = [
-            'UPOLET',
-            'Non-UPOLET'
-        ]
-
-
-    if programme not in valid_programmes:
-
-        flash(
-            f'Invalid programme for {level}.',
-            'danger'
+        match = re.fullmatch(
+            r'PRIMARY\s*([1-7])\s*[A-Z]*',
+            normalized_level
         )
 
-        return redirect(
-            url_for(
-                'bursar_fees',
-                year=year,
-                term=term
+        if not match:
+            match = re.fullmatch(
+                r'P\.?\s*([1-7])\s*[A-Z]*',
+                normalized_level
             )
-        )
-    if residence not in [
-        'Day',
-        'Boarding'
-    ]:
 
+        if not match:
+            match = re.fullmatch(
+                r'P([1-7])[A-Z]*',
+                compact_level
+            )
+
+        if match:
+            level = f"Primary {match.group(1)}"
+        else:
+            flash(
+                'Invalid class level. Select Baby, Middle, '
+                'Top or Primary 1 to Primary 7.',
+                'danger'
+            )
+
+            return redirect(
+                url_for(
+                    'bursar_fees',
+                    year=year,
+                    term=term
+                )
+            )
+
+    # =====================================================
+    # VALIDATE RESIDENCE
+    # =====================================================
+
+    if residence not in ['Day', 'Boarding']:
         flash(
             'Please select Day or Boarding.',
             'danger'
@@ -10805,15 +7197,36 @@ def bursar_fees_add():
                 term=term
             )
         )
-    try:
 
+    # =====================================================
+    # VALIDATE TERM
+    # =====================================================
+
+    if term not in ['Term 1', 'Term 2', 'Term 3']:
+        flash(
+            'Invalid term selected.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'bursar_fees',
+                year=year,
+                term='Term 1'
+            )
+        )
+
+    # =====================================================
+    # VALIDATE AMOUNT
+    # =====================================================
+
+    try:
         amount = float(amount)
 
         if amount < 0:
             raise ValueError
 
     except (ValueError, TypeError):
-
         flash(
             'Enter a valid fee amount.',
             'danger'
@@ -10826,28 +7239,27 @@ def bursar_fees_add():
                 term=term
             )
         )
-    db = get_db()
+
+    # =====================================================
+    # SAVE FEE STRUCTURE WITHOUT PROGRAMME
+    # =====================================================
+
+    db = get_db_dict()
     cur = db.cursor()
 
     try:
-
         cur.execute("""
             INSERT INTO pupil_fee_structure (
                 level,
-                programme,
                 residence,
                 term,
                 year,
                 amount,
                 description
             )
-            VALUES (
-                %s, %s, %s, %s,
-                %s, %s, %s
-            )
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             level,
-            programme,
             residence,
             term,
             year,
@@ -10858,31 +7270,35 @@ def bursar_fees_add():
         db.commit()
 
         flash(
-            'Fee structure added successfully.',
+            f'Fee structure for {level} ({residence}) '
+            f'added successfully.',
             'success'
         )
 
     except Exception as e:
-
         db.rollback()
 
-        if 'pupil_fee_structure' in str(e) and (
-            'unique' in str(e).lower()
-            or 'duplicate' in str(e).lower()
+        error_message = str(e).lower()
+
+        if (
+            'unique' in error_message
+            or 'duplicate' in error_message
         ):
             flash(
                 'A fee structure already exists for this '
-                'level, programme, residence, term and year.',
+                'class, residence, term and year.',
                 'danger'
             )
-
         else:
             flash(
                 f'Could not save fee structure: {e}',
                 'danger'
             )
+
     finally:
         cur.close()
+        db.close()
+
     return redirect(
         url_for(
             'bursar_fees',
@@ -10891,33 +7307,50 @@ def bursar_fees_add():
         )
     )
 
-@app.route('/bursar/fees/delete/<int:fee_id>', methods=['POST'])
+@app.route(
+    '/bursar/fees/delete/<int:fee_id>',
+    methods=['POST']
+)
 def bursar_fees_delete(fee_id):
 
     if not check_permission(['bursar']):
         abort(403)
 
-    db = get_db()
+    db = get_db_dict()
     cur = db.cursor()
 
     try:
+        # Confirm that the fee structure exists
+        cur.execute("""
+            SELECT id, level
+            FROM pupil_fee_structure
+            WHERE id = %s
+        """, (fee_id,))
 
+        fee = cur.fetchone()
+
+        if not fee:
+            flash(
+                'Fee structure not found.',
+                'danger'
+            )
+
+            return redirect(url_for('bursar_fees'))
+
+        # Delete the fee structure
         cur.execute("""
             DELETE FROM pupil_fee_structure
             WHERE id = %s
-        """, (
-            fee_id,
-        ))
+        """, (fee_id,))
 
         db.commit()
 
         flash(
-            'Fee structure deleted successfully.',
+            f"Fee structure for {fee['level']} deleted successfully.",
             'success'
         )
 
     except Exception as e:
-
         db.rollback()
 
         flash(
@@ -10926,18 +7359,18 @@ def bursar_fees_delete(fee_id):
         )
 
     finally:
-
         cur.close()
+        db.close()
 
-    return redirect(
-        url_for('bursar_fees')
-    )
+    return redirect(url_for('bursar_fees'))
 
 @app.route('/bursar/record_payment', methods=['POST'])
 def bursar_record_payment():
 
     if not check_permission(['bursar']):
         abort(403)
+
+    import re
 
     # =====================================================
     # GET FORM DATA
@@ -10964,33 +7397,69 @@ def bursar_record_payment():
     ).strip()
 
     # =====================================================
+    # IDENTIFY NURSERY AND PRIMARY CLASSES
+    # =====================================================
+
+    def is_nursery_or_primary(class_name):
+
+        name = re.sub(
+            r'\s+',
+            ' ',
+            (class_name or '').strip()
+        ).upper()
+
+        compact = re.sub(r'[\s.]', '', name)
+
+        if name in {
+            'BABY', 'BABY CLASS',
+            'MIDDLE', 'MIDDLE CLASS',
+            'TOP', 'TOP CLASS'
+        }:
+            return True
+
+        if re.fullmatch(
+            r'PRIMARY\s*[1-7]\s*[A-Z]*',
+            name
+        ):
+            return True
+
+        if re.fullmatch(
+            r'P\.?\s*[1-7]\s*[A-Z]*',
+            name
+        ):
+            return True
+
+        if re.fullmatch(
+            r'P[1-7][A-Z]*',
+            compact
+        ):
+            return True
+
+        return False
+
+    # =====================================================
     # VALIDATE PUPIL ID
     # =====================================================
 
     if not pupil_id:
-
         flash(
             'Pupil ID is required.',
             'danger'
         )
 
-        return redirect(
-            url_for('bursar_pupils')
-        )
+        return redirect(url_for('bursar_pupils'))
 
     # =====================================================
     # VALIDATE PAYMENT AMOUNT
     # =====================================================
 
     try:
-
         amount = float(amount_raw)
 
-        if amount <= 0:
+        if not (0 < amount < float('inf')):
             raise ValueError
 
     except (ValueError, TypeError):
-
         flash(
             'Enter a valid payment amount greater than zero.',
             'danger'
@@ -11003,58 +7472,68 @@ def bursar_record_payment():
             )
         )
 
+    # =====================================================
+    # CONNECT TO DATABASE
+    # =====================================================
+
     db = get_db_dict()
     cur = db.cursor()
 
     try:
-
         # =================================================
-        # GET PUPIL
+        # GET AND LOCK PUPIL RECORD
         # =================================================
 
         cur.execute("""
             SELECT
                 pupil_id,
                 full_name,
+                class,
                 parent_phone,
                 COALESCE(fees_total, 0) AS fees_total
             FROM pupils
-            WHERE pupil_id=%s
+            WHERE pupil_id = %s
             FOR UPDATE
-        """, (
-            pupil_id,
-        ))
+        """, (pupil_id,))
 
         pupil = cur.fetchone()
 
         if not pupil:
-
             flash(
                 'Pupil not found.',
                 'danger'
             )
 
+            return redirect(url_for('bursar_pupils'))
+
+        # =================================================
+        # ALLOW NURSERY AND PRIMARY ONLY
+        # =================================================
+
+        if not is_nursery_or_primary(pupil.get('class')):
+            flash(
+                'Payments through this route are restricted '
+                'to Nursery and Primary pupils.',
+                'danger'
+            )
+
             return redirect(
-                url_for('bursar_pupils')
+                url_for(
+                    'bursar_pupil_detail',
+                    pupil_id=pupil_id
+                )
             )
 
         # =================================================
-        # GET CURRENT TOTAL OF PAYMENT RECORDS
-        #
-        # This becomes the source of truth.
+        # GET CURRENT TOTAL PAID
         # =================================================
 
         cur.execute("""
             SELECT
-                COALESCE(
-                    SUM(amount),
-                    0
-                ) AS total_paid
+                COALESCE(SUM(amount), 0) AS total_paid
             FROM payments
-            WHERE pupil_id=%s
-        """, (
-            pupil_id,
-        ))
+            WHERE pupil_id = %s
+        """, (pupil_id,))
 
         payment_summary = cur.fetchone()
 
@@ -11062,28 +7541,23 @@ def bursar_record_payment():
             payment_summary['total_paid'] or 0
         )
 
-        # =================================================
-        # CHECK PAYMENT AGAINST FEES
-        # =================================================
-
         fees_total = float(
             pupil['fees_total'] or 0
         )
 
-        new_paid = current_paid + amount
+        # =================================================
+        # PREVENT OVERPAYMENT
+        # =================================================
 
-        # Prevent accidental overpayment
-        if new_paid > fees_total:
+        remaining_balance = max(
+            fees_total - current_paid,
+            0
+        )
 
-            maximum_payment = max(
-                fees_total - current_paid,
-                0
-            )
-
+        if amount > remaining_balance:
             flash(
                 f'Payment exceeds the remaining balance. '
-                f'Maximum amount that can be paid is '
-                f'UGX {maximum_payment:,.2f}.',
+                f'Maximum payable: UGX {remaining_balance:,.2f}.',
                 'danger'
             )
 
@@ -11105,8 +7579,7 @@ def bursar_record_payment():
         # =================================================
 
         cur.execute("""
-            INSERT INTO payments
-            (
+            INSERT INTO payments (
                 pupil_id,
                 amount,
                 payment_date,
@@ -11115,15 +7588,9 @@ def bursar_record_payment():
                 notes,
                 recorded_by
             )
-            VALUES
-            (
-                %s,
-                %s,
-                CURRENT_DATE,
-                %s,
-                %s,
-                %s,
-                %s
+            VALUES (
+                %s, %s, CURRENT_DATE, %s,
+                %s, %s, %s
             )
         """, (
             pupil_id,
@@ -11135,22 +7602,15 @@ def bursar_record_payment():
         ))
 
         # =================================================
-        # RECALCULATE TOTAL PAID FROM PAYMENT RECORDS
-        #
-        # We do this AFTER inserting the payment.
+        # RECALCULATE TOTAL PAID
         # =================================================
 
         cur.execute("""
             SELECT
-                COALESCE(
-                    SUM(amount),
-                    0
-                ) AS total_paid
+                COALESCE(SUM(amount), 0) AS total_paid
             FROM payments
-            WHERE pupil_id=%s
-        """, (
-            pupil_id,
-        ))
+            WHERE pupil_id = %s
+        """, (pupil_id,))
 
         payment_summary = cur.fetchone()
 
@@ -11158,25 +7618,21 @@ def bursar_record_payment():
             payment_summary['total_paid'] or 0
         )
 
-        # =================================================
-        # CALCULATE BALANCE
-        # =================================================
-
         fees_balance = max(
             fees_total - total_paid,
             0
         )
 
         # =================================================
-        # UPDATE PUPIL FEE FIGURES
+        # UPDATE PUPIL PAYMENT FIGURES
         # =================================================
 
         cur.execute("""
             UPDATE pupils
             SET
-                fees_paid=%s,
-                fees_balance=%s
-            WHERE pupil_id=%s
+                fees_paid = %s,
+                fees_balance = %s
+            WHERE pupil_id = %s
         """, (
             total_paid,
             fees_balance,
@@ -11184,13 +7640,12 @@ def bursar_record_payment():
         ))
 
         # =================================================
-        # COMMIT EVERYTHING TOGETHER
+        # COMMIT PAYMENT AND BALANCE TOGETHER
         # =================================================
 
         db.commit()
 
     except Exception as e:
-
         db.rollback()
 
         flash(
@@ -11206,13 +7661,15 @@ def bursar_record_payment():
         )
 
     finally:
-
         cur.close()
+        db.close()
 
-    if pupil['parent_phone']:
+    # =====================================================
+    # SEND PAYMENT SMS
+    # =====================================================
 
+    if pupil.get('parent_phone'):
         try:
-
             send_fee_sms(
                 pupil['parent_phone'],
                 pupil['full_name'],
@@ -11221,13 +7678,12 @@ def bursar_record_payment():
             )
 
         except Exception as e:
+            # Payment is already saved.
+            print(f"Fee SMS failed: {str(e)}")
 
-            # Payment has already been successfully saved.
-            # SMS failure should not undo the payment.
-
-            print(
-                f"Fee SMS failed: {str(e)}"
-            )
+    # =====================================================
+    # SUCCESS MESSAGE
+    # =====================================================
 
     flash(
         f'Payment recorded successfully. '
