@@ -3916,145 +3916,272 @@ def dos_edit_assignment(assignment_id):
 
 @app.route('/teacher/pupils')
 def teacher_pupils():
+    import re
+    from flask import request, session, flash, redirect, url_for, render_template, abort
+
     if not check_permission(['classteacher', 'subject_teacher']):
         abort(403)
 
-    term = request.args.get('term', 'Term 1')
     user_id = session.get('user_id')
+    term = request.args.get('term', 'Term 1').strip() or 'Term 1'
 
-    # =========================================================
+    # ---------------------------------------------------------
+    # CLASS HELPERS: NURSERY AND PRIMARY ONLY
+    # ---------------------------------------------------------
+    def parse_class(class_name):
+        """
+        Returns:
+            ('nursery', name, stream)
+            ('primary', number, stream)
+        or None for unsupported classes.
+
+        Examples:
+            Baby       -> ('nursery', 'BABY', '')
+            Middle     -> ('nursery', 'MIDDLE', '')
+            Top        -> ('nursery', 'TOP', '')
+            Primary 1  -> ('primary', 1, '')
+            Primary 1A -> ('primary', 1, 'A')
+            P.1A       -> ('primary', 1, 'A')
+            P1         -> ('primary', 1, '')
+        """
+        name = re.sub(r'\s+', ' ', (class_name or '').strip()).upper()
+        compact = re.sub(r'[\s.]', '', name)
+
+        nursery_aliases = {
+            'BABY': 'BABY',
+            'BABY CLASS': 'BABY',
+            'MIDDLE': 'MIDDLE',
+            'MIDDLE CLASS': 'MIDDLE',
+            'TOP': 'TOP',
+            'TOP CLASS': 'TOP',
+        }
+
+        if name in nursery_aliases:
+            return ('nursery', nursery_aliases[name], '')
+
+        match = re.fullmatch(
+            r'(?:PRIMARY\s*|P\.?\s*)([1-7])\s*([A-Z]?)',
+            name
+        )
+
+        if not match:
+            match = re.fullmatch(r'P([1-7])([A-Z]?)', compact)
+
+        if match:
+            return ('primary', int(match.group(1)), match.group(2))
+
+        return None
+
+    def class_key(class_name):
+        parsed = parse_class(class_name)
+        if not parsed:
+            return None
+
+        level, number, stream = parsed
+        return (level, number, stream)
+
+    def is_main_class(class_name):
+        parsed = parse_class(class_name)
+        return parsed is not None and parsed[2] == ''
+
+    def belongs_to_main_class(class_name, main_class):
+        first = parse_class(class_name)
+        second = parse_class(main_class)
+
+        return (
+            first is not None
+            and second is not None
+            and first[2] != ''
+            and first[:2] == second[:2]
+            and second[2] == ''
+        )
+
+    # ---------------------------------------------------------
     # GET TEACHER ASSIGNMENTS
-    # =========================================================
+    # ---------------------------------------------------------
     assignments = get_user_assignments(user_id)
 
     if not assignments:
+        flash('No classes assigned to you. Please contact admin.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Keep only supported Nursery and Primary assignments.
+    teacher_assignments = []
+
+    for assignment in assignments:
+        assigned_name = (
+            assignment.get('class_name')
+            or assignment.get('class')
+            or ''
+        ).strip()
+
+        parsed = parse_class(assigned_name)
+
+        if parsed:
+            teacher_assignments.append({
+                **assignment,
+                'class_name': assigned_name,
+                'parsed_class': parsed,
+            })
+
+    if not teacher_assignments:
         flash(
-            'No classes assigned to you. Please contact admin.',
-            'danger'
+            'You have no Nursery or Primary classes assigned.',
+            'warning'
         )
         return redirect(url_for('dashboard'))
 
-    # =========================================================
-    # GET ASSIGNED CLASSES AND THEIR STREAMS
-    # =========================================================
-    
+    # ---------------------------------------------------------
+    # LOAD ACTUAL CLASS NAMES FROM THE PUPILS TABLE
+    # ---------------------------------------------------------
     db = get_db_dict()
     cur = db.cursor()
-    
-    assigned_classes = sorted(
-        set(
-            (a['class_name'] or '').strip().upper()
-            for a in assignments
-            if a.get('class_name')
+
+    try:
+        cur.execute("""
+            SELECT DISTINCT class
+            FROM pupils
+            WHERE class IS NOT NULL
+              AND TRIM(class) <> ''
+            ORDER BY class
+        """)
+        class_rows = cur.fetchall()
+    finally:
+        cur.close()
+        db.close()
+
+    # Map normalized class names to the actual names stored in DB.
+    actual_classes = {}
+
+    for row in class_rows:
+        actual_name = (row.get('class') or '').strip()
+        key = class_key(actual_name)
+
+        if key:
+            actual_classes.setdefault(key, actual_name)
+
+    # ---------------------------------------------------------
+    # BUILD AVAILABLE CLASSES
+    #
+    # Assignment to Primary 1:
+    #   Primary 1, Primary 1A, Primary 1B, etc.
+    #
+    # Assignment to Primary 1A:
+    #   Primary 1A only.
+    #
+    # Nursery classes are handled similarly, but are not
+    # automatically combined with other Nursery classes.
+    # ---------------------------------------------------------
+    available_by_key = {}
+
+    for assignment in teacher_assignments:
+        assigned_name = assignment['class_name']
+        assigned_key = class_key(assigned_name)
+
+        if not assigned_key:
+            continue
+
+        # Always include the assigned class.
+        available_by_key[assigned_key] = (
+            actual_classes.get(assigned_key, assigned_name)
+        )
+
+        # A main class assignment grants access to its streams.
+        if is_main_class(assigned_name):
+            for pupil_key, actual_name in actual_classes.items():
+                if belongs_to_main_class(actual_name, assigned_name):
+                    available_by_key[pupil_key] = actual_name
+
+    available_classes = sorted(
+        available_by_key.values(),
+        key=lambda name: (
+            {'nursery': 0, 'primary': 1}.get(
+                (parse_class(name) or ('',))[0], 2
+            ),
+            (parse_class(name) or ('', 999, ''))[1],
+            (parse_class(name) or ('', '', ''))[2],
+            name.upper()
         )
     )
-    
-    available_classes = set()
-    
-    for assigned_class in assigned_classes:
-    
-        # Always include the main class
-        available_classes.add(assigned_class)
-    
-        # If assignment is a main class such as S.1,
-        # automatically include all its streams.
-        if re.match(r'^S\.\d+$', assigned_class):
-    
-            cur.execute(
-                """
-                SELECT DISTINCT class
-                FROM pupils
-                WHERE class ~ %s
-                ORDER BY class
-                """,
-                (
-                    '^' + re.escape(assigned_class) + r'[A-Za-z]+$',
-                )
-            )
-    
-            stream_rows = cur.fetchall()
-    
-            for row in stream_rows:
-                stream_class = (row['class'] or '').strip().upper()
-    
-                if stream_class:
-                    available_classes.add(stream_class)
-    
-    cur.close()
-    
-    available_classes = sorted(available_classes)
 
     if not available_classes:
-        flash(
-            'No classes assigned to you. Please contact admin.',
-            'danger'
-        )
+        flash('No Nursery or Primary classes are available.', 'warning')
         return redirect(url_for('dashboard'))
 
-    # =========================================================
+    # ---------------------------------------------------------
     # SELECT CLASS
-    # =========================================================
-    selected_class = request.args.get(
-        'class_name',
-        session.get(
-            'selected_class',
+    # ---------------------------------------------------------
+    requested_class = request.args.get('class_name', '').strip()
+
+    if requested_class:
+        requested_key = class_key(requested_class)
+
+        # Use the real class name from our permitted class list.
+        selected_class = next(
+            (
+                name for name in available_classes
+                if class_key(name) == requested_key
+            ),
+            None
+        )
+    else:
+        previous_class = session.get('selected_class', '')
+        previous_key = class_key(previous_class)
+
+        selected_class = next(
+            (
+                name for name in available_classes
+                if class_key(name) == previous_key
+            ),
             available_classes[0]
         )
-    )
 
-    selected_class = selected_class.strip().upper()
-
-    # =========================================================
-    # CHECK WHETHER TEACHER HAS ACCESS
-    #
-    # Example:
-    #
-    # Assignment: S.1
-    #
-    # Allowed:
-    # S.1A
-    # S.1B
-    # S.1C
-    #
-    # Assignment: S.1A
-    #
-    # Allowed:
-    # S.1A only
-    # =========================================================
-    if not teacher_has_class_access(
-        user_id,
-        selected_class
-    ):
+    if not selected_class:
+        flash('You are not assigned to that class.', 'danger')
         selected_class = available_classes[0]
 
-        session['selected_class'] = selected_class
-    else:
-        session['selected_class'] = selected_class
+    session['selected_class'] = selected_class
 
-    # =========================================================
+    # ---------------------------------------------------------
+    # CONFIRM ACCESS
+    # ---------------------------------------------------------
+    selected_key = class_key(selected_class)
+    has_access = False
+
+    for assignment in teacher_assignments:
+        assigned_name = assignment['class_name']
+        assigned_key = class_key(assigned_name)
+
+        if not assigned_key:
+            continue
+
+        # Exact assignment: access to that class.
+        if selected_key == assigned_key:
+            has_access = True
+            break
+
+        # Main class assignment: access to its streams.
+        if (
+            is_main_class(assigned_name)
+            and belongs_to_main_class(selected_class, assigned_name)
+        ):
+            has_access = True
+            break
+
+    if not has_access:
+        abort(403)
+
+    # ---------------------------------------------------------
     # GET PUPILS
-    # =========================================================
+    # ---------------------------------------------------------
+    selected_parsed = parse_class(selected_class)
+    selected_is_main = is_main_class(selected_class)
+
     db = get_db_dict()
     cur = db.cursor()
 
-    # =========================================================
-    # MAIN CLASS
-    #
-    # If assignment is S.1, retrieve:
-    #
-    # S.1A
-    # S.1B
-    # S.1C
-    # etc.
-    #
-    # =========================================================
-    if re.match(
-        r'^S\.\d+$',
-        selected_class
-    ):
-
-        cur.execute(
-            """
+    try:
+        cur.execute("""
             SELECT
                 pupil_id,
                 full_name,
@@ -4062,70 +4189,71 @@ def teacher_pupils():
                 parent_phone,
                 class
             FROM pupils
-            WHERE class=%s OR class ~ %s
+            WHERE class IS NOT NULL
             ORDER BY class, full_name
-            """,
-            (
-                selected_class, 
-                '^' + selected_class + r'[A-Za-z]+$',
+        """)
+
+        all_pupils = cur.fetchall()
+
+    finally:
+        cur.close()
+        db.close()
+
+    pupils = []
+
+    for pupil in all_pupils:
+        pupil_class = (pupil.get('class') or '').strip()
+        pupil_parsed = parse_class(pupil_class)
+
+        if not pupil_parsed:
+            continue
+
+        # A main class displays its own pupils and its streams.
+        if selected_is_main:
+            matches = (
+                pupil_parsed[:2] == selected_parsed[:2]
             )
-        )
+        else:
+            # A selected stream displays only that stream.
+            matches = (
+                class_key(pupil_class) == selected_key
+            )
 
-    # =========================================================
-    # SPECIFIC STREAM
-    #
-    # If selected class is S.1A, retrieve only S.1A.
-    #
-    # =========================================================
-    else:
+        if matches:
+            pupil['photo_url'] = get_photo_url(
+                pupil.get('photo_path')
+            )
+            pupils.append(pupil)
 
-        cur.execute(
-            """
-            SELECT
-                pupil_id,
-                full_name,
-                photo_path,
-                parent_phone,
-                class
-            FROM pupils
-            WHERE class = %s
-            ORDER BY full_name
-            """,
-            (selected_class,)
-        )
+    # ---------------------------------------------------------
+    # CLASS TEACHER STATUS
+    # ---------------------------------------------------------
+    is_classteacher = False
 
-    pupils = cur.fetchall()
+    for assignment in teacher_assignments:
+        if (
+            (assignment.get('assignment_type') or '').lower()
+            == 'classteacher'
+        ):
+            assigned_name = assignment['class_name']
 
-    # =========================================================
-    # ADD PHOTO URL
-    # =========================================================
-    for pupil in pupils:
-        pupil['photo_url'] = get_photo_url(
-            pupil.get('photo_path')
-        )
+            if class_key(assigned_name) == selected_key:
+                is_classteacher = True
+                break
 
-    cur.close()
+            if (
+                is_main_class(assigned_name)
+                and belongs_to_main_class(
+                    selected_class,
+                    assigned_name
+                )
+            ):
+                is_classteacher = True
+                break
 
-    # =========================================================
-    # CHECK CLASS TEACHER STATUS
-    #
-    # If teacher is class teacher of S.1,
-    # they remain class teacher for:
-    #
-    # S.1A
-    # S.1B
-    # S.1C
-    #
-    # =========================================================
-    is_classteacher = teacher_has_class_access(
-        user_id,
-        selected_class,
-        assignment_type='classteacher'
-    )
-
-    # =========================================================
-    # RETURN TEMPLATE
-    # =========================================================
+    # ---------------------------------------------------------
+    # RENDER TEMPLATE
+    # ---------------------------------------------------------
     return render_template(
         'teacher/pupils.html',
         pupils=pupils,
@@ -4134,7 +4262,7 @@ def teacher_pupils():
         is_classteacher=is_classteacher,
         term=term
     )
-    
+
 
 def to_number(value):
     if value is None:
