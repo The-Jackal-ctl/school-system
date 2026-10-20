@@ -1,20 +1,54 @@
-const CACHE_NAME = 'school-system-v1';
-const urlsToCache = [
-    '/',
-    '/static/manifest.json'
+
+const CACHE_NAME = "school-system-safe-v2";
+
+const APP_SHELL = [
+    "/offline",
+    "/static/manifest.webmanifest"
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener("install", event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(urlsToCache))
+            .then(cache => cache.addAll(APP_SHELL))
+            .then(() => self.skipWaiting())
     );
-    self.skipWaiting();
 });
 
-self.addEventListener('fetch', event => {
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => response || fetch(event.request))
+self.addEventListener("activate", event => {
+    event.waitUntil(
+        caches.keys().then(keys =>
+            Promise.all(
+                keys
+                    .filter(key => key.startsWith("school-system-") &&
+                                   key !== CACHE_NAME)
+                    .map(key => caches.delete(key))
+            )
+        ).then(() => self.clients.claim())
     );
+});
+
+self.addEventListener("fetch", event => {
+    const request = event.request;
+    const url = new URL(request.url);
+
+    if (url.origin !== self.location.origin) return;
+    if (request.method !== "GET") return;
+
+    // Never cache private pages or uploaded pupil files.
+    if (request.mode === "navigate") {
+        event.respondWith(
+            fetch(request).catch(async () => {
+                const offlinePage = await caches.match("/offline");
+                return offlinePage || new Response(
+                    "You are offline. Reconnect and try again.",
+                    {
+                        status: 503,
+                        headers: {
+                            "Content-Type": "text/plain; charset=utf-8"
+                        }
+                    }
+                );
+            })
+        );
+    }
 });
