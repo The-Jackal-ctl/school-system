@@ -1,0 +1,46 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Pupil Fee Details</h2>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <h4>{{ pupil.full_name }}</h4>
+
+            <p>
+                <strong>Pupil ID:</strong>
+                {{ pupil.pupil_id }}
+            </p>
+
+            <p>
+                <strong>Class:</strong>
+                {{ pupil['class'] }}
+            </p>
+
+            <hr>
+
+            <p>
+                <strong>Total Fees:</strong>
+                {{ "{:,.0f}".format(pupil.fees_total) }}
+            </p>
+
+            <p>
+                <strong>Fees Paid:</strong>
+                {{ "{:,.0f}".format(pupil.fees_paid) }}
+            </p>
+
+            <p>
+                <strong>Outstanding Balance:</strong>
+                {{ "{:,.0f}".format(pupil.fees_balance) }}
+            </p>
+
+            <a href="{{ url_for('bursar_pupils') }}"
+               class="btn btn-secondary mt-3">
+                Back to Pupil List
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
