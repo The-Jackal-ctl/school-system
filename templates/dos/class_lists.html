@@ -251,14 +251,16 @@
                         <td class="action-column">
                             <div class="btn-group btn-group-sm">
 
+                                                                
                                 <a href="{{ url_for(
                                     'teacher_report_card',
-                                    student_id=s.pupil_id
+                                    pupil_id=s.pupil_id
                                 ) }}"
                                    class="btn btn-info"
                                    title="View Report">
                                     <i class="fas fa-eye"></i>
                                 </a>
+
 
                                 <form method="POST"
                                       action="{{ url_for(
