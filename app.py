@@ -8594,7 +8594,47 @@ def bursar_clearance(pupil_id):
         logo_url=logo_url,
         stamp_url=stamp_url
     )
+# =========================================================
+# BURSAR - INDIVIDUAL PUPIL FEE DETAILS
+# =========================================================
 
+@app.route('/bursar/pupil-detail/<pupil_id>')
+def bursar_pupil_detail(pupil_id):
+
+    if not check_permission(['bursar']):
+        abort(403)
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    cur.execute("""
+        SELECT
+            pupil_id,
+            full_name,
+            class,
+            fees_total,
+            fees_paid,
+            fees_balance
+        FROM pupils
+        WHERE pupil_id=%s
+    """, (pupil_id,))
+
+    pupil = cur.fetchone()
+    cur.close()
+
+    if not pupil:
+        flash('Pupil not found', 'danger')
+        return redirect(url_for('bursar_pupils'))
+
+    pupil['fees_total'] = pupil.get('fees_total') or 0
+    pupil['fees_paid'] = pupil.get('fees_paid') or 0
+    pupil['fees_balance'] = pupil.get('fees_balance') or 0
+
+    return render_template(
+        'bursar/pupil_fee_detail.html',
+        pupil=pupil
+    )
+    
 @app.route('/bursar/bulk_clearance')
 def bursar_bulk_clearance():
 
