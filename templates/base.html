@@ -161,7 +161,7 @@
                         <a href="{{ url_for('bursar_process_webhooks') }}">Process Webhooks</a>
                     </div>
                 </div>
-                <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
+              <a href="{{ url_for('logout') }}" onclick="clearOfflineBursarRecords(event)"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'classteacher' %}
                 <a href="{{ url_for('teacher_students') }}"><i class="fas fa-users"></i> My Students</a>
@@ -267,7 +267,51 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
+function clearOfflineBursarRecords(event) {
+    event.preventDefault();
+
+    const logoutUrl = event.currentTarget.href;
+
+    // Remove localStorage entries reserved for offline bursar records.
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+
+            if (key && key.startsWith("school-bursar-offline:")) {
+                localStorage.removeItem(key);
+            }
+        }
+    } catch (error) {
+        console.error("Could not clear offline bursar storage.", error);
+    }
+
+    // Delete the IndexedDB database reserved for offline bursar records.
+    try {
+        const request = indexedDB.deleteDatabase(
+            "school-bursar-offline-v1"
+        );
+
+        request.onsuccess = function () {
+            window.location.href = logoutUrl;
+        };
+
+        request.onerror = function () {
+            window.location.href = logoutUrl;
+        };
+
+        request.onblocked = function () {
+            window.location.href = logoutUrl;
+        };
+    } catch (error) {
+        window.location.href = logoutUrl;
+    }
+}
+</script>
+
+<script>
+    
 function toggleDropdown(element) {
     var parent = element.closest('.dropdown-menu-item');
     var submenu = parent.querySelector('.dropdown-submenu');
