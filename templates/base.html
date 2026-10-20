@@ -348,12 +348,6 @@ function refreshNotifications() {
     loadNotifications();
 }
 
-// Service Worker Registration
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js')
-        .then(reg => console.log('Service Worker registered', reg))
-        .catch(err => console.log('Service Worker failed', err));
-}
 
 // Fetch unread alert count for stores keeper
 function fetchAlertCount() {
