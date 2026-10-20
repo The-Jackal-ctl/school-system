@@ -8630,10 +8630,17 @@ def bursar_pupil_detail(pupil_id):
     pupil['fees_paid'] = pupil.get('fees_paid') or 0
     pupil['fees_balance'] = pupil.get('fees_balance') or 0
 
-    return render_template(
-        'bursar/pupil_fee_detail.html',
-        pupil=pupil
+    response = app.make_response(
+        render_template(
+            'bursar/pupil_fee_detail.html',
+            pupil=pupil
+        )
     )
+
+    response.headers['Cache-Control'] = 'no-store, private'
+    response.headers['Pragma'] = 'no-cache'
+
+    return response
     
 @app.route('/bursar/bulk_clearance')
 def bursar_bulk_clearance():
