@@ -89,7 +89,6 @@
                             </a>
                             <div class="dropdown-submenu">
                                 <a href="{{ url_for('dos_admit') }}">Local Admission</a>
-                                <a href="{{ url_for('dos_pending_admissions') }}">Online Applications</a>
                             </div>
                         </div>
                         <a href="{{ url_for('dos_class_lists') }}">Class Lists</a>
@@ -113,13 +112,9 @@
                         <i class="fas fa-chart-line"></i> Grading Systems
                         <i class="fas fa-chevron-down chevron"></i>
                     </a>
-                    <div class="dropdown-submenu">
-                        <a href="{{ url_for('dos_olevel_grading') }}">O-Level Grading</a>
-                        <a href="{{ url_for('dos_alevel_grading') }}">A-Level Grading</a>
-                        <a href="{{ url_for('dos_predefined_comments') }}">Predefined Comments</a>
+                   
                     </div>
                 </div>
-                <a href="{{ url_for('dos_schedules') }}"><i class="fas fa-clock"></i> Schedules</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'bursar' %}
