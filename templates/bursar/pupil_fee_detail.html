@@ -36,10 +36,16 @@
                 {{ "{:,.0f}".format(pupil.fees_balance) }}
             </p>
 
-            <a href="{{ url_for('bursar_pupils') }}"
-               class="btn btn-secondary mt-3">
-                Back to Pupil List
-            </a>
+             
+                <a href="{{ url_for('bursar_pupils') }}"
+                   class="btn btn-secondary mt-3">
+                    Back to Pupil List
+                </a>
+                
+                <p class="text-muted mt-3">
+                    Offline saving will be available after secure local storage is configured.
+                </p>
+
         </div>
     </div>
 </div>
