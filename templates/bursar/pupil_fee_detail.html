@@ -42,9 +42,41 @@
                     Back to Pupil List
                 </a>
                 
-                <p class="text-muted mt-3">
-                    Offline saving will be available after secure local storage is configured.
-                </p>
+                
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h5>Offline Fee Record</h5>
+                
+                        <p class="text-muted">
+                            Save an encrypted copy of this pupil's fee details
+                            for offline viewing on this device.
+                        </p>
+                
+                        <label for="offline-passphrase" class="form-label">
+                            Offline passphrase (at least 12 characters)
+                        </label>
+                
+                        <input
+                            type="password"
+                            id="offline-passphrase"
+                            class="form-control"
+                            minlength="12"
+                            autocomplete="new-password"
+                            placeholder="Create a strong passphrase"
+                        >
+                
+                        <button
+                            type="button"
+                            class="btn btn-primary mt-3"
+                            id="save-offline-fee"
+                        >
+                            Save for Offline
+                        </button>
+                
+                        <p id="offline-save-status" class="mt-3" role="status"></p>
+                    </div>
+                </div>
+
 
         </div>
     </div>
@@ -100,6 +132,138 @@ async function deriveOfflineEncryptionKey(passphrase, salt) {
         ["encrypt", "decrypt"]
     );
 }
+
+async function encryptOfflineFeeRecord(record, passphrase) {
+    if (passphrase.length < 12) {
+        throw new Error("Use a passphrase of at least 12 characters.");
+    }
+
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    const key = await deriveOfflineEncryptionKey(passphrase, salt);
+
+    const plaintext = new TextEncoder().encode(
+        JSON.stringify({
+            ...record,
+            saved_at: new Date().toISOString()
+        })
+    );
+
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        plaintext
+    );
+
+    return {
+        pupil_id: String(record.pupil_id),
+        salt: Array.from(salt),
+        iv: Array.from(iv),
+        ciphertext: Array.from(new Uint8Array(ciphertext))
+    };
+}
+
+async function decryptOfflineFeeRecord(encrypted, passphrase) {
+    const salt = new Uint8Array(encrypted.salt);
+    const iv = new Uint8Array(encrypted.iv);
+    const ciphertext = new Uint8Array(encrypted.ciphertext);
+
+    const key = await deriveOfflineEncryptionKey(passphrase, salt);
+
+    const plaintext = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        ciphertext
+    );
+
+    return JSON.parse(
+        new TextDecoder().decode(plaintext)
+    );
+}
+
+async function storeEncryptedOfflineFeeRecord(encrypted) {
+    const db = await openOfflineFeeDatabase();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(
+            OFFLINE_FEE_STORE,
+            "readwrite"
+        );
+
+        transaction.objectStore(OFFLINE_FEE_STORE).put(encrypted);
+
+        transaction.oncomplete = () => {
+            db.close();
+            resolve();
+        };
+
+        transaction.onerror = () => {
+            db.close();
+            reject(transaction.error);
+        };
+
+        transaction.onabort = () => {
+            db.close();
+            reject(transaction.error);
+        };
+    });
+}
+
+document.getElementById("save-offline-fee").addEventListener("click", async function () {
+    const passphraseInput = document.getElementById("offline-passphrase");
+    const status = document.getElementById("offline-save-status");
+    const button = document.getElementById("save-offline-fee");
+    const passphrase = passphraseInput.value;
+
+    if (passphrase.length < 12) {
+        status.textContent = "Please use a passphrase of at least 12 characters.";
+        return;
+    }
+
+    button.disabled = true;
+    status.textContent = "Encrypting and saving your record...";
+
+    try {
+        const response = await fetch(
+            {{ url_for('bursar_offline_fee_record', pupil_id=pupil.pupil_id) | tojson }},
+            {
+                method: "GET",
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: { "Accept": "application/json" }
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                response.status === 401 || response.status === 403
+                    ? "Your session has expired or you lack permission. Please log in again."
+                    : "The fee record could not be retrieved. Please try again online."
+            );
+        }
+
+        const record = await response.json();
+
+        const encrypted = await encryptOfflineFeeRecord(
+            record,
+            passphrase
+        );
+
+        await storeEncryptedOfflineFeeRecord(encrypted);
+
+        status.textContent =
+            "Encrypted record saved on this device. Remember your passphrase; it cannot be recovered if lost.";
+    } catch (error) {
+        console.error("Offline fee save failed:", error);
+        status.textContent =
+            error.message || "Could not save the record. Please try again.";
+    } finally {
+        passphraseInput.value = "";
+        button.disabled = false;
+    }
+});
+
 </script>
 
 {% endblock %}
