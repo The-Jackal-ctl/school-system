@@ -8641,7 +8641,48 @@ def bursar_pupil_detail(pupil_id):
     response.headers['Pragma'] = 'no-cache'
 
     return response
-    
+
+@app.route('/bursar/offline-fee-record/<pupil_id>')
+def bursar_offline_fee_record(pupil_id):
+    if not check_permission(['bursar']):
+        abort(403)
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    cur.execute("""
+        SELECT
+            pupil_id,
+            full_name,
+            class,
+            fees_total,
+            fees_paid,
+            fees_balance
+        FROM pupils
+        WHERE pupil_id = %s
+    """, (pupil_id,))
+
+    pupil = cur.fetchone()
+    cur.close()
+
+    if not pupil:
+        return jsonify({'error': 'Pupil not found'}), 404
+
+    record = {
+        'pupil_id': pupil['pupil_id'],
+        'full_name': pupil['full_name'],
+        'class': pupil['class'],
+        'fees_total': float(pupil.get('fees_total') or 0),
+        'fees_paid': float(pupil.get('fees_paid') or 0),
+        'fees_balance': float(pupil.get('fees_balance') or 0)
+    }
+
+    response = app.make_response(jsonify(record))
+    response.headers['Cache-Control'] = 'no-store, private'
+    response.headers['Pragma'] = 'no-cache'
+
+    return response
+
 @app.route('/bursar/bulk_clearance')
 def bursar_bulk_clearance():
 
