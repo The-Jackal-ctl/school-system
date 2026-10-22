@@ -74,49 +74,82 @@
                 </a>
                 <a href="{{ url_for('school_settings') }}"><i class="fas fa-cogs"></i> School Settings</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
-
+            
             {% elif session.role == 'dos' %}
-                <div class="dropdown-menu-item">
-                    <a href="#" onclick="toggleDropdown(this); return false;">
-                        <i class="fas fa-users"></i> Student Management
-                        <i class="fas fa-chevron-down chevron"></i>
-                    </a>
-                    <div class="dropdown-submenu">
-                        <div class="dropdown-menu-item">
-                            <a href="#" onclick="toggleDropdown(this); return false;">
-                                <i class="fas fa-graduation-cap"></i> Admission Management
-                                <i class="fas fa-chevron-down chevron"></i>
+
+                    <!-- STUDENT MANAGEMENT -->
+                    <div class="dropdown-menu-item">
+                        <a href="#" onclick="toggleDropdown(this); return false;">
+                            <i class="fas fa-users"></i>
+                            Student Management
+                            <i class="fas fa-chevron-down chevron"></i>
+                        </a>
+    
+                        <div class="dropdown-submenu">
+                            <a href="{{ url_for('dos_admit') }}">
+                                <i class="fas fa-user-plus"></i>
+                                Admit Student
                             </a>
-                            <div class="dropdown-submenu">
-                                <a href="{{ url_for('dos_admit') }}">Local Admission</a>
-                            </div>
+    
+                            <a href="{{ url_for('dos_class_lists') }}">
+                                <i class="fas fa-list"></i>
+                                Class Lists
+                            </a>
+    
+                            <a href="{{ url_for('dos_promote') }}">
+                                <i class="fas fa-level-up-alt"></i>
+                                Promote Students
+                            </a>
                         </div>
-                        <a href="{{ url_for('dos_class_lists') }}">Class Lists</a>
-                        <a href="{{ url_for('dos_promote') }}">Promote Students</a>
-                        <a href="{{ url_for('teacher_upload_marks') }}">Upload Marks</a>
                     </div>
-                </div>
-                <div class="dropdown-menu-item">
-                    <a href="#" onclick="toggleDropdown(this); return false;">
-                        <i class="fas fa-chalkboard-teacher"></i> Teacher Management
-                        <i class="fas fa-chevron-down chevron"></i>
+    
+                    <!-- ACADEMIC MANAGEMENT -->
+                    <div class="dropdown-menu-item">
+                        <a href="#" onclick="toggleDropdown(this); return false;">
+                            <i class="fas fa-graduation-cap"></i>
+                            Academic Management
+                            <i class="fas fa-chevron-down chevron"></i>
+                        </a>
+    
+                        <div class="dropdown-submenu">
+                            <a href="{{ url_for('teacher_upload_marks') }}">
+                                <i class="fas fa-pen"></i>
+                                Enter Marks
+                            </a>
+    
+                            <a href="{{ url_for('grading') }}">
+                                <i class="fas fa-chart-bar"></i>
+                                Grading System
+                            </a>
+                        </div>
+                    </div>
+    
+                    <!-- TEACHER MANAGEMENT -->
+                    <div class="dropdown-menu-item">
+                        <a href="#" onclick="toggleDropdown(this); return false;">
+                            <i class="fas fa-chalkboard-teacher"></i>
+                            Teacher Management
+                            <i class="fas fa-chevron-down chevron"></i>
+                        </a>
+    
+                        <div class="dropdown-submenu">
+                            <a href="{{ url_for('dos_teacher_assignments') }}">
+                                <i class="fas fa-tasks"></i>
+                                Teacher Assignments
+                            </a>
+    
+                            <a href="{{ url_for('dos_upload_teachers') }}">
+                                <i class="fas fa-user-plus"></i>
+                                Manage Teachers
+                            </a>
+                        </div>
+                    </div>
+    
+                    <!-- LOGOUT -->
+                    <a href="{{ url_for('logout') }}">
+                        <i class="fas fa-sign-out-alt"></i>
+                        Logout
                     </a>
-                    <div class="dropdown-submenu">
-                        <a href="{{ url_for('dos_teacher_assignments') }}">View Assignments</a>
-                        <a href="{{ url_for('dos_upload_teachers') }}">Upload Teachers</a>
-                    </div>
-                </div>
-                
-                <a href="{{ url_for('grading') }}" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Grading System</span>
-                </a>
-       
-                <a href="{{ url_for('grading') }}" class="nav-link">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Grading System</span>
-                </a>
-                <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'bursar' %}
                 <a href="{{ url_for('bursar_pupils') }}"><i class="fas fa-users"></i> Fee Management</a>
