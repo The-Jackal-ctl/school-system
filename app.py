@@ -2114,7 +2114,7 @@ def view_all_notifications():
     role = session.get('role')
     db = get_db_dict()
     cur = db.cursor()
-    cur.execute("SELECT * FROM notifications WHERE user_role = ? ORDER BY created_at DESC", (role,))
+    cur.execute("SELECT * FROM notifications WHERE user_role = %s ORDER BY created_at DESC", (role,))
     notifications = cur.fetchall()
     cur.close()
     return render_template('notifications.html', notifications=notifications)
