@@ -1299,7 +1299,7 @@ def get_grade_and_aggregate(percentage):
     cur = db.cursor()
     cur.execute(
         """
-        SELECT grade, descriptor
+        SELECT grade, aggregate
         FROM grading_system
         WHERE %s BETWEEN min_score AND max_score
         ORDER BY min_score DESC
