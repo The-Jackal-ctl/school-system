@@ -3338,12 +3338,12 @@ def grading():
                 str(value).strip().lower() if value is not None else ''
                 for value in headers
             ]
-            required = ['min_score', 'max_score', 'grade', 'aggregates']
+            required = ['min_score', 'max_score', 'grade', 'aggregate']
 
             if not all(column in headers for column in required):
                 raise ValueError(
                     'Excel headers must include: min_score, max_score, '
-                    'grade, aggregates.'
+                    'grade, aggregate.'
                 )
 
             indexes = {name: headers.index(name) for name in required}
@@ -3356,16 +3356,16 @@ def grading():
                 minimum = Decimal(str(row[indexes['min_score']]))
                 maximum = Decimal(str(row[indexes['max_score']]))
                 grade = str(row[indexes['grade']]).strip()
-                aggregates = int(row[indexes['aggregates']])
+                aggregate = int(row[indexes['aggregate']])
 
                 if minimum < 0 or maximum > 100 or minimum > maximum:
                     raise ValueError('Scores must be between 0 and 100.')
                 if not grade:
                     raise ValueError('A grade cannot be blank.')
-                if aggregates < 1:
+                if aggregate < 1:
                     raise ValueError('Aggregates must be positive.')
 
-                rules.append((minimum, maximum, grade, aggregates))
+                rules.append((minimum, maximum, grade, aggregate))
 
             if not rules:
                 raise ValueError('No grading rules were found in the file.')
@@ -3380,7 +3380,7 @@ def grading():
             cur.executemany(
                 """
                 INSERT INTO grading_system
-                    (min_score, max_score, grade, aggregates)
+                    (min_score, max_score, grade, aggregate)
                 VALUES (%s, %s, %s, %s)
                 """,
                 rules
@@ -3397,7 +3397,7 @@ def grading():
         return redirect(url_for('grading'))
 
     cur.execute("""
-        SELECT min_score, max_score, grade, aggregates
+        SELECT min_score, max_score, grade, aggregate
         FROM grading_system
         ORDER BY min_score DESC
     """)
