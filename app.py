@@ -290,7 +290,16 @@ def init_db():
             UNIQUE(pupil_id, subject, term, year)
         )
     """)
-
+        # GRADING SYSTEM
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS grading_system (
+            id SERIAL PRIMARY KEY,
+            min_score NUMERIC(5,2) NOT NULL,
+            max_score NUMERIC(5,2) NOT NULL,
+            grade TEXT NOT NULL,
+            aggregate INTEGER
+        )
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fee_payment_requests (
             id SERIAL PRIMARY KEY,
@@ -1319,24 +1328,24 @@ def get_grade_and_aggregate(percentage):
 # A-LEVEL CLASS TEACHER COMMENT
 # BASED ON TOTAL POINTS
 # =========================================================
-def get_alevel_class_teacher_comment(total_points):
+def get_teacher_comment(aggregate):
 
-    if total_points >= 14:
+    if aggregate <= 8:
         return (
             "Excellent performance. Keep it up!"
         )
 
-    elif total_points >= 10:
+    elif aggreate <=14:
         return (
             "Very good performance. Maintain it!"
         )
 
-    elif total_points >= 7:
+    elif aggregate <=18:
         return (
             "Good performance. Continue working hard."
         )
 
-    elif total_points >= 4:
+    elif aggregate <= 28:
         return (
             "Fair performance. Put in more effort"
         )
@@ -1351,60 +1360,27 @@ def get_alevel_class_teacher_comment(total_points):
 # A-LEVEL HEADTEACHER COMMENT
 # BASED ON TOTAL POINTS
 # =========================================================
-def get_alevel_headteacher_comment(total_points):
+def get_headteacher_comment(aggregate):
 
-    if total_points >= 14:
-        return (
-            "Excellent academic performance. Keep up the excellent work."
-        )
-
-    elif total_points >= 10:
-        return (
-            "Very good academic performance. Continue working hard."
-        )
-
-    elif total_points >= 7:
-        return (
-            "Good academic performance. Maintain "
-            "consistent effort."
-        )
-
-    elif total_points >= 4:
-        return (
-            "Fair academic performance. Increase effort"
-        )
-
-    else:
-        return (
-            "The pupil needs considerable improvement and greater "
-            "commitment to academic work"
-        )
-
-
-# =========================================================
-# O-LEVEL CLASS TEACHER COMMENT
-# BASED ON GENERAL IDENTIFIER
-# =========================================================
-def get_olevel_class_teacher_comment(general_identifier):
-
-    if general_identifier >= 2.50:
+   
+    if aggregate <= 8:
         return (
             "Excellent performance. Keep it up!"
         )
 
-    elif general_identifier >= 2.00:
+    elif aggreate <=14:
         return (
             "Very good performance. Maintain it!"
         )
 
-    elif general_identifier >= 1.50:
+    elif aggregate <=18:
         return (
-            "Good performance. Continue putting in consistent effort."
+            "Good performance. Continue working hard."
         )
 
-    elif general_identifier >= 1.00:
+    elif aggregate <= 28:
         return (
-            "Fair performance. Needs to put in more effort"
+            "Fair performance. Put in more effort"
         )
 
     else:
@@ -1412,39 +1388,6 @@ def get_olevel_class_teacher_comment(general_identifier):
             "The pupil needs significant improvement"
         )
 
-
-# =========================================================
-# O-LEVEL HEADTEACHER COMMENT
-# BASED ON GENERAL IDENTIFIER
-# =========================================================
-def get_olevel_headteacher_comment(general_identifier):
-
-    if general_identifier >= 2.50:
-        return (
-            "Excellent academic performance. Keep up the excellent performance."
-        )
-
-    elif general_identifier >= 2.00:
-        return (
-            "Very good academic performance. Maintain consistent "
-            "effort."
-        )
-
-    elif general_identifier >= 1.50:
-        return (
-            "Good academic performance. Work hard to achieve even better results."
-        )
-
-    elif general_identifier >= 1.00:
-        return (
-            "Fair academic performance. Increase effort and commitment in order to improve."
-        )
-
-    else:
-        return (
-            "The pupil needs significant improvement and greater "
-            "commitment to academic work"
-        )
 
 # ==================== TEACHER ASSIGNMENT HELPERS ====================
 def get_user_assignments(user_id=None):
@@ -1509,38 +1452,6 @@ def get_user_classes(user_id=None, assignment_type=None):
 
     return [row['class_name'] for row in rows]
 
-def generate_fee_prn():
-    """
-    Generate a random 10-digit fee payment reference.
-    """
-
-    while True:
-
-        prn = ''.join(
-            str(secrets.randbelow(10))
-            for _ in range(10)
-        )
-
-        db = get_db_dict()
-        cur = db.cursor()
-
-        cur.execute(
-            """
-            SELECT 1
-            FROM fee_payment_requests
-            WHERE prn=%s
-            LIMIT 1
-            """,
-            (prn,)
-        )
-
-        exists = cur.fetchone()
-
-        cur.close()
-        db.close()
-
-        if not exists:
-            return prn    
 
 def teacher_has_class_access(user_id, pupil_class, assignment_type=None):
     """
@@ -1610,42 +1521,6 @@ def get_teacher_accessible_classes(user_id=None, assignment_type=None):
         user_id=user_id,
         assignment_type=assignment_type
     )
-# ==================== BANK PAYMENT PROCESSING ====================
-def process_bank_payment(payroll):
-    import random
-    results={'success':False,'token':None,'reference':None,'error':None}
-    if random.random()>0.1:
-        results['success']=True
-        results['token']=f"TOKEN-{payroll['payroll_no']}"
-        results['reference']=f"REF-{payroll['payroll_no']}-{int(time.time())}"
-    else:
-        results['error']="Bank API temporarily unavailable"
-    return results
-
-# =========================================================
-# SIX-DIGIT PAYROLL APPROVAL CODE
-# =========================================================
-
-def generate_approval_code():
-    return ''.join(
-        str(secrets.randbelow(10))
-        for _ in range(6)
-    )
-
-def generate_secure_token(expiry_hours=2):
-
-    characters = string.ascii_letters + string.digits
-
-    token = ''.join(
-        secrets.choice(characters)
-        for _ in range(32)
-    )
-
-    expires_at = datetime.utcnow() + timedelta(
-        hours=expiry_hours
-    )
-
-    return token, expires_at
 
 def generate_voucher_no():
     db = get_db_dict()
