@@ -1,0 +1,74 @@
+
+{% extends "base.html" %}
+{% block title %}Grading System{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary text-white">
+        Grading System
+    </div>
+
+    <div class="card-body">
+        <p>
+            Upload an Excel file with these four column headers:
+            <strong>min_score, max_score, grade, aggregates</strong>.
+        </p>
+
+        <div class="alert alert-warning">
+            Uploading a valid file replaces all existing grading rules.
+        </div>
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="grading_file" class="form-label">
+                    Excel file (.xlsx)
+                </label>
+                <input
+                    type="file"
+                    name="grading_file"
+                    id="grading_file"
+                    class="form-control"
+                    accept=".xlsx"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                Upload and Replace
+            </button>
+        </form>
+
+        <hr>
+        <h5>Current Grading Rules</h5>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Minimum Score</th>
+                        <th>Maximum Score</th>
+                        <th>Grade</th>
+                        <th>Aggregates</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rules %}
+                    <tr>
+                        <td>{{ r[0] }}</td>
+                        <td>{{ r[1] }}</td>
+                        <td>{{ r[2] }}</td>
+                        <td>{{ r[3] }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center">
+                            No grading rules have been uploaded yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
