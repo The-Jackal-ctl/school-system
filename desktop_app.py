@@ -32,8 +32,8 @@ def load_desktop_config():
         key = key.strip()
         value = value.strip().strip('"').strip("'")
 
-        if key == "DATABASE_URL" and value:
-            os.environ["DATABASE_URL"] = value
+        if key in ("DATABASE_URL", "SECRET_KEY") and value:
+            os.environ[key] = value
 
 
 def start_server():
