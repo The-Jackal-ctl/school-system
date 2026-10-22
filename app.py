@@ -60,11 +60,14 @@ import psycopg2.extras
 from flask import g
 
 
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL is missing. Add PostgreSQL URL in Render Environment Variables."
+        "DATABASE_URL is not configured. "
+        "Set it to your local PostgreSQL connection string "
+        "when running the desktop application."
     )
 
 
