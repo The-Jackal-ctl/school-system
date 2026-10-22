@@ -146,7 +146,7 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
+    
     # PUPILS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pupils (
@@ -181,6 +181,7 @@ def init_db():
     """)
     cursor.execute("""ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS residence TEXT DEFAULT 'Day';""")
+    cursor.execute("""ALTER TABLE grading_system ADD COLUMN IF NOT EXISTS comment TEXT;""")
     # STAFF
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS staff (
