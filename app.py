@@ -3309,6 +3309,104 @@ def dos_promote():
 
 
 
+@app.route('/grading', methods=['GET', 'POST'])
+def grading():
+    from flask import flash, redirect, render_template, request, url_for
+    from openpyxl import load_workbook
+    from decimal import Decimal, InvalidOperation
+
+    db = get_db()
+    cur = db.cursor()
+
+    if request.method == 'POST':
+        file = request.files.get('grading_file')
+
+        if not file or not file.filename.lower().endswith('.xlsx'):
+            flash('Please upload a valid .xlsx Excel file.', 'danger')
+            cur.close()
+            return redirect(url_for('grading'))
+
+        try:
+            workbook = load_workbook(file, read_only=True, data_only=True)
+            sheet = workbook.active
+            rows = sheet.iter_rows(values_only=True)
+            headers = next(rows, None)
+
+            if not headers:
+                raise ValueError('The Excel file is empty.')
+
+            headers = [
+                str(value).strip().lower() if value is not None else ''
+                for value in headers
+            ]
+            required = ['min_score', 'max_score', 'grade', 'aggregates']
+
+            if not all(column in headers for column in required):
+                raise ValueError(
+                    'Excel headers must include: min_score, max_score, '
+                    'grade, aggregates.'
+                )
+
+            indexes = {name: headers.index(name) for name in required}
+            rules = []
+
+            for row in rows:
+                if not row or all(value is None for value in row):
+                    continue
+
+                minimum = Decimal(str(row[indexes['min_score']]))
+                maximum = Decimal(str(row[indexes['max_score']]))
+                grade = str(row[indexes['grade']]).strip()
+                aggregates = int(row[indexes['aggregates']])
+
+                if minimum < 0 or maximum > 100 or minimum > maximum:
+                    raise ValueError('Scores must be between 0 and 100.')
+                if not grade:
+                    raise ValueError('A grade cannot be blank.')
+                if aggregates < 1:
+                    raise ValueError('Aggregates must be positive.')
+
+                rules.append((minimum, maximum, grade, aggregates))
+
+            if not rules:
+                raise ValueError('No grading rules were found in the file.')
+
+            rules.sort(key=lambda item: item[0])
+
+            for previous, current in zip(rules, rules[1:]):
+                if current[0] <= previous[1]:
+                    raise ValueError('The score ranges overlap.')
+
+            cur.execute('DELETE FROM grading_system')
+            cur.executemany(
+                """
+                INSERT INTO grading_system
+                    (min_score, max_score, grade, aggregates)
+                VALUES (%s, %s, %s, %s)
+                """,
+                rules
+            )
+            db.commit()
+            flash('Grading rules uploaded successfully.', 'success')
+
+        except Exception as error:
+            db.rollback()
+            flash(f'Upload failed: {error}', 'danger')
+        finally:
+            cur.close()
+
+        return redirect(url_for('grading'))
+
+    cur.execute("""
+        SELECT min_score, max_score, grade, aggregates
+        FROM grading_system
+        ORDER BY min_score DESC
+    """)
+    rules = cur.fetchall()
+    cur.close()
+
+    return render_template('grading.html', rules=rules)
+
 
 
 @app.route('/dos/upload_teachers', methods=['GET', 'POST'])
