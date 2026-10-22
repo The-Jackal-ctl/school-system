@@ -5,35 +5,36 @@
 
 {% block content %}
 
-<div class="container-fluid">
+<div class="container-fluid py-3">
 
-    <div class="card shadow">
+    <div class="card shadow-sm border-0">
 
-        <!-- HEADER -->
-        <div class="card-header bg-primary text-white">
+        <!-- PAGE HEADER -->
+        <div class="card-header bg-primary text-white py-3">
             <h5 class="mb-0">
-                <i class="fas fa-edit"></i>
-                Upload Nursery and Primary Marks
+                <i class="fas fa-edit me-2"></i>
+                Nursery and Primary Marks Entry
             </h5>
+            <small>Enter marks scored out of 100 for each pupil.</small>
         </div>
 
         <div class="card-body">
 
             <!-- CLASS, SUBJECT, TERM AND YEAR FILTERS -->
-            <form method="GET" action="{{ url_for('teacher_upload_marks') }}"
+            <form method="GET"
+                  action="{{ url_for('teacher_upload_marks') }}"
                   class="row g-3 mb-4">
 
                 <div class="col-md-3">
-                    <label for="class" class="form-label">
+                    <label for="class" class="form-label fw-bold">
                         Class
                     </label>
 
-                    <select
-                        name="class"
-                        id="class"
-                        class="form-select"
-                        required
-                        onchange="this.form.submit()">
+                    <select name="class"
+                            id="class"
+                            class="form-select"
+                            required
+                            onchange="this.form.submit()">
 
                         <option value="">Select Class</option>
 
@@ -48,16 +49,15 @@
                 </div>
 
                 <div class="col-md-3">
-                    <label for="subject" class="form-label">
+                    <label for="subject" class="form-label fw-bold">
                         Subject
                     </label>
 
-                    <select
-                        name="subject"
-                        id="subject"
-                        class="form-select"
-                        {% if not selected_class %}disabled{% endif %}
-                        onchange="this.form.submit()">
+                    <select name="subject"
+                            id="subject"
+                            class="form-select"
+                            {% if not selected_class %}disabled{% endif %}
+                            onchange="this.form.submit()">
 
                         <option value="">Select Subject</option>
 
@@ -72,37 +72,43 @@
                 </div>
 
                 <div class="col-md-2">
-                    <label for="term" class="form-label">
+                    <label for="term" class="form-label fw-bold">
                         Term
                     </label>
 
-                    <select name="term" id="term" class="form-select">
+                    <select name="term"
+                            id="term"
+                            class="form-select">
+
                         {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
                         <option value="{{ t }}"
                             {% if term == t %}selected{% endif %}>
                             {{ t }}
                         </option>
                         {% endfor %}
+
                     </select>
                 </div>
 
                 <div class="col-md-2">
-                    <label for="year" class="form-label">
+                    <label for="year" class="form-label fw-bold">
                         Academic Year
                     </label>
 
-                    <input
-                        type="number"
-                        name="year"
-                        id="year"
-                        class="form-control"
-                        value="{{ year }}"
-                        required>
+                    <input type="number"
+                           name="year"
+                           id="year"
+                           class="form-control"
+                           value="{{ year }}"
+                           min="2000"
+                           max="2100"
+                           required>
                 </div>
 
                 <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-filter"></i>
+                    <button type="submit"
+                            class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-1"></i>
                         Apply
                     </button>
                 </div>
@@ -111,99 +117,107 @@
 
             <!-- INFORMATION -->
             <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i>
+                <i class="fas fa-info-circle me-2"></i>
 
-                Select your assigned class and subject before entering marks.
-                Only pupils belonging to the selected class are displayed.
+                Select an assigned class and subject. Enter each pupil's
+                marks out of 100 and provide the teacher's initials.
+                The system obtains the aggregate and comment from the
+                grading table.
 
                 {% if selected_class %}
-                <hr>
-                <strong>Selected Class:</strong> {{ selected_class }}
-                {% if selected_subject %}
-                <br>
-                <strong>Selected Subject:</strong> {{ selected_subject }}
-                {% endif %}
-                <br>
-                <strong>Assessment:</strong>
-                {{ term }} {{ year }}
+                <hr class="my-2">
+
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <strong>Class:</strong> {{ selected_class }}
+                    </div>
+
+                    <div class="col-md-4">
+                        <strong>Subject:</strong>
+                        {{ selected_subject or 'Not selected' }}
+                    </div>
+
+                    <div class="col-md-4">
+                        <strong>Assessment:</strong> {{ term }} {{ year }}
+                    </div>
+                </div>
                 {% endif %}
             </div>
 
             {% if selected_class %}
 
-            <!-- ENTRY TABS -->
-            <ul class="nav nav-tabs" role="tablist">
-
-                <li class="nav-item" role="presentation">
-                    <button
-                        class="nav-link active"
-                        id="manual-tab"
-                        data-bs-toggle="tab"
-                        data-bs-target="#manual"
-                        type="button"
-                        role="tab">
-                        <i class="fas fa-keyboard"></i>
-                        Manual Entry
-                    </button>
-                </li>
-
-                <li class="nav-item" role="presentation">
-                    <button
-                        class="nav-link"
-                        id="upload-tab"
-                        data-bs-toggle="tab"
-                        data-bs-target="#upload"
-                        type="button"
-                        role="tab">
-                        <i class="fas fa-file-excel"></i>
-                        Excel Upload
-                    </button>
-                </li>
-
-            </ul>
-
-            <div class="tab-content mt-3">
-
-                <!-- =========================================
-                     MANUAL MARKS ENTRY
-                ========================================== -->
-                <div
-                    class="tab-pane fade show active"
-                    id="manual"
-                    role="tabpanel">
+                {% if selected_subject %}
 
                     {% if pupils %}
 
-                    <form
-                        method="POST"
-                        action="{{ url_for('save_pupil_marks') }}"
-                        id="manualMarksForm">
+                    <!-- MARKS ENTRY FORM -->
+                    <form method="POST"
+                          action="{{ url_for('teacher_upload_marks',
+                              **{
+                                  'class': selected_class,
+                                  'subject': selected_subject,
+                                  'term': term,
+                                  'year': year
+                              }) }}"
+                          id="manualMarksForm">
 
-                        <input type="hidden" name="class"
+                        <input type="hidden"
+                               name="class"
                                value="{{ selected_class }}">
 
-                        <input type="hidden" name="subject"
+                        <input type="hidden"
+                               name="subject"
                                value="{{ selected_subject }}">
 
-                        <input type="hidden" name="term"
+                        <input type="hidden"
+                               name="term"
                                value="{{ term }}">
 
-                        <input type="hidden" name="year"
+                        <input type="hidden"
+                               name="year"
                                value="{{ year }}">
 
+                        <!-- TEACHER INITIALS -->
+                        <div class="row mb-4">
+                            <div class="col-md-4 col-lg-3">
+                                <label for="teacher_initials"
+                                       class="form-label fw-bold">
+                                    Teacher Initials
+                                    <span class="text-danger">*</span>
+                                </label>
+
+                                <input type="text"
+                                       name="teacher_initials"
+                                       id="teacher_initials"
+                                       class="form-control"
+                                       maxlength="20"
+                                       placeholder="e.g. J.K."
+                                       required>
+                            </div>
+                        </div>
+
+                        <!-- PUPILS MARKS TABLE -->
                         <div class="table-responsive">
+                            <table class="table table-bordered table-striped
+                                          table-hover align-middle">
 
-                            <table class="table table-bordered table-striped align-middle">
-
-                                <thead class="table-light">
+                                <thead class="table-primary">
                                     <tr>
-                                        <th>#</th>
-                                        <th>Pupil ID</th>
-                                        <th>Pupil Name</th>
-
-                                        {% for assessment in assessment_types %}
-                                        <th>{{ assessment }}</th>
-                                        {% endfor %}
+                                        <th style="width: 55px;">#</th>
+                                        <th style="min-width: 100px;">
+                                            Pupil ID
+                                        </th>
+                                        <th style="min-width: 220px;">
+                                            Pupil Name
+                                        </th>
+                                        <th style="min-width: 130px;"
+                                            class="text-center">
+                                            Full Marks
+                                        </th>
+                                        <th style="min-width: 180px;"
+                                            class="text-center">
+                                            Marks Scored
+                                        </th>
                                     </tr>
                                 </thead>
 
@@ -217,26 +231,37 @@
                                         <td>
                                             {{ pupil.pupil_id }}
 
-                                            <input
-                                                type="hidden"
-                                                name="pupil_id[]"
-                                                value="{{ pupil.pupil_id }}">
+                                            <input type="hidden"
+                                                   name="pupil_id[]"
+                                                   value="{{ pupil.pupil_id }}">
                                         </td>
 
-                                        <td>{{ pupil.full_name }}</td>
+                                        <td class="fw-semibold">
+                                            {{ pupil.full_name }}
+                                        </td>
 
-                                        {% for assessment in assessment_types %}
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary">
+                                                100
+                                            </span>
+                                        </td>
+
                                         <td>
-                                            <input
-                                                type="number"
-                                                name="{{ assessment|lower }}[]"
-                                                class="form-control"
-                                                min="0"
-                                                max="100"
-                                                step="0.01"
-                                                placeholder="—">
+                                            <input type="number"
+                                                   name="marks_scored[]"
+                                                   class="form-control marks-input"
+                                                   min="0"
+                                                   max="100"
+                                                   step="0.01"
+                                                   inputmode="decimal"
+                                                   placeholder="Enter mark"
+                                                   value="{% if pupil.marks_scored is not none %}{{ pupil.marks_scored }}{% endif %}"
+                                                   aria-label="Marks scored for {{ pupil.full_name }}">
+
+                                            <div class="invalid-feedback">
+                                                Enter a mark between 0 and 100.
+                                            </div>
                                         </td>
-                                        {% endfor %}
 
                                     </tr>
                                     {% endfor %}
@@ -244,107 +269,65 @@
                                 </tbody>
 
                             </table>
-
                         </div>
 
-                        {% if selected_subject %}
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save"></i>
-                            Save Marks
-                        </button>
-                        {% else %}
-                        <div class="alert alert-warning">
-                            Select a subject before saving marks.
+                        <!-- TABLE FOOTER -->
+                        <div class="d-flex flex-wrap justify-content-between
+                                    align-items-center gap-2 mt-3">
+
+                            <div class="text-muted small">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Leave a mark blank if it has not been entered.
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="reset"
+                                        class="btn btn-outline-secondary">
+                                    <i class="fas fa-undo me-1"></i>
+                                    Reset Changes
+                                </button>
+
+                                <button type="submit"
+                                        class="btn btn-success"
+                                        id="saveMarksButton">
+                                    <i class="fas fa-save me-1"></i>
+                                    Save Marks
+                                </button>
+                            </div>
+
                         </div>
-                        {% endif %}
 
                     </form>
 
                     {% else %}
 
-                    <div class="alert alert-warning">
-                        No pupils were found in {{ selected_class }}.
+                    <div class="alert alert-warning text-center">
+                        <i class="fas fa-users me-2"></i>
+                        No pupils were found in
+                        <strong>{{ selected_class }}</strong>.
                     </div>
 
                     {% endif %}
 
+                {% else %}
+
+                <div class="alert alert-warning text-center">
+                    <i class="fas fa-book me-2"></i>
+                    Select a subject assigned to you before entering marks.
                 </div>
 
-                <!-- =========================================
-                     EXCEL MARKS UPLOAD
-                ========================================== -->
-                <div
-                    class="tab-pane fade"
-                    id="upload"
-                    role="tabpanel">
-
-                    <div class="alert alert-warning">
-                        <strong>Excel column format</strong>
-
-                        <p class="mb-2 mt-2">
-                            Use these column headings in the first row:
-                        </p>
-
-                        <code>pupil_id, BOT, MOT, EOT</code>
-
-                        <p class="mb-0 mt-2">
-                            The uploaded marks must belong to the selected
-                            class, subject, term and year.
-                        </p>
-                    </div>
-
-                    <form
-                        method="POST"
-                        action="{{ url_for('teacher_upload_marks_save') }}"
-                        enctype="multipart/form-data"
-                        id="uploadMarksForm">
-
-                        <input type="hidden" name="class"
-                               value="{{ selected_class }}">
-
-                        <input type="hidden" name="subject"
-                               value="{{ selected_subject }}">
-
-                        <input type="hidden" name="term"
-                               value="{{ term }}">
-
-                        <input type="hidden" name="year"
-                               value="{{ year }}">
-
-                        <div class="mb-3">
-                            <label for="marks_file" class="form-label">
-                                Excel File (.xlsx)
-                            </label>
-
-                            <input
-                                type="file"
-                                name="marks_file"
-                                id="marks_file"
-                                class="form-control"
-                                accept=".xlsx"
-                                required>
-                        </div>
-
-                        <button
-                            type="submit"
-                            class="btn btn-primary"
-                            {% if not selected_subject %}disabled{% endif %}>
-
-                            <i class="fas fa-upload"></i>
-                            Upload Marks
-                        </button>
-
-                    </form>
-
-                </div>
-
-            </div>
+                {% endif %}
 
             {% else %}
 
-            <div class="alert alert-secondary text-center">
-                <i class="fas fa-users"></i>
-                Select a class above to display its pupils and enter marks.
+            <div class="alert alert-secondary text-center py-4">
+                <i class="fas fa-users fa-2x mb-3"></i>
+
+                <h6>Select a Class to Begin</h6>
+
+                <p class="mb-0">
+                    Choose an assigned class above to display its pupils.
+                </p>
             </div>
 
             {% endif %}
@@ -352,5 +335,73 @@
         </div>
     </div>
 </div>
+
+<!-- MARK VALIDATION -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('manualMarksForm');
+
+    if (!form) return;
+
+    const markInputs = form.querySelectorAll('.marks-input');
+
+    markInputs.forEach(function (input) {
+        input.addEventListener('input', function () {
+            const rawValue = input.value.trim();
+
+            if (rawValue === '') {
+                input.setCustomValidity('');
+                input.classList.remove('is-invalid');
+                return;
+            }
+
+            const mark = Number(rawValue);
+            const valid = Number.isFinite(mark) &&
+                          mark >= 0 &&
+                          mark <= 100;
+
+            input.setCustomValidity(
+                valid ? '' : 'Enter a mark between 0 and 100.'
+            );
+
+            input.classList.toggle('is-invalid', !valid);
+        });
+    });
+
+    form.addEventListener('submit', function (event) {
+        let valid = true;
+
+        markInputs.forEach(function (input) {
+            const rawValue = input.value.trim();
+
+            if (rawValue === '') {
+                input.setCustomValidity('');
+                input.classList.remove('is-invalid');
+                return;
+            }
+
+            const mark = Number(rawValue);
+            const markValid = Number.isFinite(mark) &&
+                              mark >= 0 &&
+                              mark <= 100;
+
+            input.setCustomValidity(
+                markValid ? '' : 'Enter a mark between 0 and 100.'
+            );
+
+            input.classList.toggle('is-invalid', !markValid);
+
+            if (!markValid) {
+                valid = false;
+            }
+        });
+
+        if (!valid) {
+            event.preventDefault();
+            form.reportValidity();
+        }
+    });
+});
+</script>
 
 {% endblock %}
