@@ -1310,26 +1310,32 @@ def stores_mark_notifications_read():
     return mark_notifications_read()
 # ==================== GRADING HELPERS ====================
 
+
 def get_grade_and_aggregate(percentage):
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
-        SELECT grade, aggregate,comment
-        FROM grading_system
-        WHERE %s BETWEEN min_score AND max_score
-        ORDER BY min_score DESC
-        LIMIT 1
-        """,
-        (percentage,)
-    )
-    result = cur.fetchone()
-    cur.close()
 
-    if result:
-        return result['grade'], result['aggregate'],['comment']
+    try:
+        cur.execute(
+            """
+            SELECT grade, aggregate, comment
+            FROM grading_system
+            WHERE %s BETWEEN min_score AND max_score
+            ORDER BY min_score DESC
+            LIMIT 1
+            """,
+            (percentage,)
+        )
+        result = cur.fetchone()
 
-    return None, None
+        if result:
+            return result['grade'], result['aggregate'], result['comment']
+
+        return None, None, None
+
+    finally:
+        cur.close()
+
 
 # =========================================================
 # A-LEVEL CLASS TEACHER COMMENT
