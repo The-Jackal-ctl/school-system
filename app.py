@@ -2468,7 +2468,6 @@ def nssf_paye_settings():
 
     return render_template('admin/nssf_paye_settings.html',settings=settings)
 
-
 # ==================== DOS MODULE ====================
 SCHOOL_ABBR = "EPS"
 def generate_pupil_id():
