@@ -1314,7 +1314,7 @@ def get_grade_and_aggregate(percentage):
     cur = db.cursor()
     cur.execute(
         """
-        SELECT grade, aggregate
+        SELECT grade, aggregate,comment
         FROM grading_system
         WHERE %s BETWEEN min_score AND max_score
         ORDER BY min_score DESC
@@ -1326,7 +1326,7 @@ def get_grade_and_aggregate(percentage):
     cur.close()
 
     if result:
-        return result['grade'], result['aggregate']
+        return result['grade'], result['aggregate'],['comment']
 
     return None, None
 
