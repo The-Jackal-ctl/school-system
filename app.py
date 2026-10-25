@@ -261,7 +261,7 @@ def init_db():
             subject TEXT NOT NULL,
             term TEXT NOT NULL,
             year INTEGER NOT NULL,
-            final_score NUMERIC(5,2),
+            final_mark NUMERIC(5,2),
             grade TEXT,
             aggregate INTEGER,
             teacher_initials TEXT,
