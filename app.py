@@ -287,6 +287,7 @@ def init_db():
         )
     """)
 	cursor.execute("""ALTER TABLE grading_system ADD COLUMN IF NOT EXISTS comment TEXT;""")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fee_payment_requests (
             id SERIAL PRIMARY KEY,
