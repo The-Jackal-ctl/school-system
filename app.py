@@ -253,29 +253,23 @@ def init_db():
         )
     """)
     # MARKS
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS marks (
-            id SERIAL PRIMARY KEY,
-            pupil_id TEXT,
-            subject TEXT,
-            term TEXT,
-            year INTEGER,bot_score NUMERIC(5,2),
-            mot_score NUMERIC(5,2),
-            eot_score NUMERIC(5,2),
-            total_score NUMERIC(5,2),
-            grade TEXT,
-            aggregate INTEGER,
+    
+	cursor.execute("""
+	    CREATE TABLE IF NOT EXISTS marks (
+	        id SERIAL PRIMARY KEY,
+	        pupil_id TEXT REFERENCES pupils(pupil_id),
+	        subject TEXT NOT NULL,
+	        term TEXT NOT NULL,
+	        year INTEGER NOT NULL,
+	        final_score NUMERIC(5,2),
+	        grade TEXT,
+	        aggregate INTEGER,
+	        teacher_initials TEXT,
+	        teacher_id INTEGER,
+	        UNIQUE (pupil_id, subject, term, year)
+	    )
+	""")
 
-            teacher_initials TEXT,
-            teacher_id INTEGER,
-            FOREIGN KEY(pupil_id)
-                REFERENCES pupils(pupil_id),
-
-            UNIQUE(pupil_id, subject, term, year)
-        )
-    """)
-    cursor.execute("""ALTER TABLE marks
-        RENAME COLUMN total_score TO final_score;""")
     # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
