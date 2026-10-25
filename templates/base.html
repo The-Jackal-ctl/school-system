@@ -447,6 +447,37 @@ loadNotifications();
 fetchAlertCount();
 
 
+<script>
+(async function removeOldOfflineFeatures() {
+    if (!("serviceWorker" in navigator)) return;
+
+    try {
+        const registrations =
+            await navigator.serviceWorker.getRegistrations();
+
+        await Promise.all(
+            registrations.map(registration =>
+                registration.unregister()
+            )
+        );
+
+        const keys = await caches.keys();
+
+        await Promise.all(
+            keys
+                .filter(key =>
+                    key.startsWith("school-manager-shell-")
+                )
+                .map(key => caches.delete(key))
+        );
+
+        console.log("Old offline features cleared.");
+    } catch (error) {
+        console.error("Offline cleanup failed:", error);
+    }
+})();
+</script>
+
 </script>
 </body>
 
