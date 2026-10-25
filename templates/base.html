@@ -196,7 +196,6 @@
                 <a href="{{ url_for('teacher_pupils') }}"><i class="fas fa-users"></i> My Pupils</a>
                 <a href="{{ url_for('teacher_upload_pupils') }}"><i class="fas fa-upload"></i> Enter Marks</a>
                 <a href="{{ url_for('teacher_upload_marks') }}"><i class="fas fa-upload"></i> Upload Marks</a>
-                <a href="{{ url_for('teacher_attendance') }}"><i class="fas fa-check-circle"></i> Mark Attendance</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'subject_teacher' %}
