@@ -4286,6 +4286,7 @@ def to_number(value):
 
     return float(value)
     
+
 @app.route('/teacher/upload_marks', methods=['GET'])
 def teacher_upload_marks():
 
@@ -4565,12 +4566,8 @@ def save_manual_marks():
 
         pupil_ids = request.form.getlist('pupil_id[]')
 
-        # Primary uses BOT, MOT and EOT.
-        # Nursery uses the same fields in this example.
-        bot_values = request.form.getlist('bot[]')
-        mot_values = request.form.getlist('mot[]')
-        eot_values = request.form.getlist('eot[]')
-
+     	# Only EOT marks are entered.
+        marks_scored = request.form.getlist('marks_scored[]')
         if not pupil_ids:
             raise ValueError('No pupils were submitted.')
 
@@ -4584,13 +4581,13 @@ def save_manual_marks():
                 mark = float(value)
             except (ValueError, TypeError):
                 raise ValueError(
-                    'All marks must be numeric values from 0 to 100.'
+                    'All EOT marks must be numeric values from 0 to 100.'
                 )
 
             if not 0 <= mark <= 100:
-                raise ValueError('Marks must be between 0 and 100.')
+                raise ValueError('EOT marks must be between 0 and 100.')
 
-            return mark
+                return round(mark, 2)
 
         for i, pupil_id in enumerate(pupil_ids):
             try:
@@ -4598,36 +4595,21 @@ def save_manual_marks():
             except (ValueError, TypeError):
                 raise ValueError('Invalid pupil ID.')
 
-            bot = parse_mark(
-                bot_values[i] if i < len(bot_values) else ''
-            )
-            mot = parse_mark(
-                mot_values[i] if i < len(mot_values) else ''
-            )
-            eot = parse_mark(
-                eot_values[i] if i < len(eot_values) else ''
+            marks_scored = parse_mark(
+                marks_scored[i] if i < len(marks_scored) else ''
             )
 
-            scores = [
-                score for score in (bot, mot, eot)
-                if score is not None
-            ]
-
-            if not scores:
+            # Skip pupils whose EOT mark was left blank.
+            if marks_scored is None:
                 continue
 
-            final_mark = round(sum(scores) / len(scores), 2)
+            # For EOT-only entry, the EOT mark is the final mark.
+            final_mark = marks_scored
 
-            # Use the grading table for the selected class level.
-            # Adjust this query if Nursery and Primary have different
-            # grading tables or grading rules.
             cursor.execute(
                 """
-                SELECT grade, points
-                FROM alevel_grading
-                WHERE is_subsidiary = 0
-                  AND min_score <= %s
-                  AND max_score >= %s
+                SELECT grade, aggregate, comment
+                FROM grading_system
                 ORDER BY min_score DESC
                 LIMIT 1
                 """,
@@ -4638,50 +4620,41 @@ def save_manual_marks():
 
             grade = grading['grade'] if grading else None
             aggregate = grading['aggregate'] if grading else None
-
-            # Requires these columns to exist in marks:
-            # bot, mot, eot, final_mark, grade, points.
+            comment = grading['comment']
             cursor.execute(
                 """
                 INSERT INTO marks (
                     pupil_id,
                     subject,
-                    bot,
-                    mot,
-                    eot,
                     final_mark,
                     grade,
                     aggregate,
+	            comment,
                     teacher_initials,
                     term,
                     year
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s %s, %s,)
                 ON CONFLICT (pupil_id, subject, term, year)
                 DO UPDATE SET
-                    bot = EXCLUDED.bot,
-                    mot = EXCLUDED.mot,
-                    eot = EXCLUDED.eot,
                     final_mark = EXCLUDED.final_mark,
                     grade = EXCLUDED.grade,
                     aggregate = EXCLUDED.aggregate,
+                    comment= EXCLUDED.comment,
                     teacher_initials = EXCLUDED.teacher_initials
                 """,
                 (
                     pupil_id,
                     subject,
-                    bot,
-                    mot,
-                    eot,
                     final_mark,
                     grade,
                     aggregate,
+	            comment,
                     teacher_initials,
                     term,
                     year
                 )
             )
-
         db.commit()
 
         flash(
@@ -4943,9 +4916,6 @@ def teacher_report_card(pupil_id):
                 """
                 SELECT
                     subject,
-                    bot,
-                    mot,
-                    eot,
                     final_mark,
                     grade,
                     aggregate,
@@ -4963,14 +4933,11 @@ def teacher_report_card(pupil_id):
             marks = []
 
             for m in raw_marks:
-
-                bot = m['bot']
-                mot = m['mot']
-                eot = m['eot']
+                marks_scored = m['marks_scored']
 
                 entered_scores = [
                     float(score)
-                    for score in (bot, mot, eot)
+                    for score in (marks_scored)
                     if score is not None and score != ''
                 ]
 
@@ -4979,19 +4946,16 @@ def teacher_report_card(pupil_id):
                     continue
 
                 # Same calculation as the manual mark-saving route.
-                final_mark = round(
-                    sum(entered_scores) / len(entered_scores),
+                final_mark = round(marks_scored,
                     2
                 )
 
                 marks.append({
                     'subject': m['subject'],
-                    'bot': bot,
-                    'mot': mot,
-                    'eot': eot,
                     'final_mark': final_mark,
                     'grade': m['grade'],
-                    'points': m['points'],
+                    'aggregate': m['aggregate'],
+		    'comment':m['comment'],
                     'teacher_initials': m['teacher_initials']
                 })
 
@@ -4999,18 +4963,14 @@ def teacher_report_card(pupil_id):
                 m for m in marks
                 if m['final_mark'] is not None
             ]
-
+            full_marks_total = sum(m['full_marks'])
             total_marks = sum(
                 m['final_mark'] for m in valid_marks
             )
 
             subject_count = len(valid_marks)
-
-            general_average = (
-                round(total_marks / subject_count, 2)
-                if subject_count else 0
-            )
-
+            total_aggregate = sum(m['aggregate'])
+           
             return render_template(
                 'teacher/report_card_primary.html',
                 pupil_id=pupil_id,
@@ -5022,7 +4982,8 @@ def teacher_report_card(pupil_id):
                 marks=marks,
                 total_marks=round(total_marks, 2),
                 subject_count=subject_count,
-                general_average=general_average,
+                total_aggregate=total_aggregate,
+		comment=comment,
                 next_term_begins=next_term_begins,
                 next_term_ends=next_term_ends,
                 stamp_url=stamp_url,
@@ -5035,6 +4996,7 @@ def teacher_report_card(pupil_id):
     finally:
         cur.close()
         db.close()
+
 
 @app.route('/teacher/edit_pupil/<pupil_id>', methods=['GET', 'POST'])
 def teacher_edit_pupil(pupil_id):
@@ -6055,9 +6017,6 @@ def print_all_report_cards():
                 """
                 SELECT
                     subject,
-                    bot,
-                    mot,
-                    eot,
                     final_mark,
                     grade,
                     aggregate,
@@ -6084,13 +6043,11 @@ def print_all_report_cards():
 
             for m in raw_marks:
 
-                bot = m['bot']
-                mot = m['mot']
-                eot = m['eot']
+                marks_scored = m['marks_scored']
 
                 entered_scores = [
                     float(score)
-                    for score in (bot, mot, eot)
+                    for score in (marks_scored)
                     if score is not None and score != ''
                 ]
 
@@ -6099,19 +6056,16 @@ def print_all_report_cards():
                     continue
 
                 # Average the entered BOT, MOT and EOT marks.
-                final_mark = round(
-                    sum(entered_scores) / len(entered_scores),
+                final_mark = round(marks_scored,
                     2
                 )
 
                 marks.append({
                     'subject': m['subject'],
-                    'bot': bot,
-                    'mot': mot,
-                    'eot': eot,
                     'final_mark': final_mark,
                     'grade': m['grade'],
                     'aggregate': m['aggregate'],
+		    'comment':m['comment'],
                     'teacher_initials': m['teacher_initials']
                 })
 
@@ -6128,14 +6082,10 @@ def print_all_report_cards():
                 m['final_mark']
                 for m in valid_marks
             )
-
+            full_marks_total = sum(m['full_marks'])
             subject_count = len(valid_marks)
-
-            general_average = (
-                round(total_marks / subject_count, 2)
-                if subject_count > 0
-                else 0
-            )
+            total_aggregate = sum(m['aggregate'])
+            
 
             # ====================================================
             # ADD REPORT
@@ -6152,7 +6102,9 @@ def print_all_report_cards():
 
                 'total_marks': round(total_marks, 2),
                 'subject_count': subject_count,
-                'general_average': general_average
+                'aggregate': aggregate,
+		'comment': comment
+
             })
 
         # ========================================================
