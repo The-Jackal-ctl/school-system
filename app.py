@@ -274,7 +274,8 @@ def init_db():
             UNIQUE(pupil_id, subject, term, year)
         )
     """)
-    
+    cursor.execute("""ALTER TABLE marks
+        RENAME COLUMN total_score TO final_score;""")
     # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
