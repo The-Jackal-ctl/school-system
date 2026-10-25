@@ -193,20 +193,20 @@
               <a href="{{ url_for('logout') }}" onclick="clearOfflineBursarRecords(event)"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'classteacher' %}
-                <a href="{{ url_for('teacher_students') }}"><i class="fas fa-users"></i> My Students</a>
-                <a href="{{ url_for('teacher_upload_students') }}"><i class="fas fa-upload"></i> Enter Marks</a>
+                <a href="{{ url_for('teacher_pupils') }}"><i class="fas fa-users"></i> My Pupils</a>
+                <a href="{{ url_for('teacher_upload_pupils') }}"><i class="fas fa-upload"></i> Enter Marks</a>
                 <a href="{{ url_for('teacher_upload_marks') }}"><i class="fas fa-upload"></i> Upload Marks</a>
                 <a href="{{ url_for('teacher_attendance') }}"><i class="fas fa-check-circle"></i> Mark Attendance</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'subject_teacher' %}
-                <a href="{{ url_for('teacher_students') }}"><i class="fas fa-users"></i> My Students</a>
+                <a href="{{ url_for('teacher_pupils') }}"><i class="fas fa-users"></i> My Pupils</a>
                 <a href="{{ url_for('teacher_upload_marks') }}"><i class="fas fa-upload"></i> Enter Marks</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
             {% elif session.role == 'headteacher' %}
                 <a href="{{ url_for('headteacher_approvals') }}"><i class="fas fa-check-double"></i> Pending Approvals</a>
-                <a href="{{ url_for('headteacher_students') }}"><i class="fas fa-users"></i> View All Students</a>
+                <a href="{{ url_for('headteacher_pupils') }}"><i class="fas fa-users"></i> View All Students</a>
                 <a href="{{ url_for('school_settings') }}"><i class="fas fa-cogs"></i> School Settings</a>
                 <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
 
