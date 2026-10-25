@@ -158,10 +158,6 @@ def init_db():
             payment_date TIMESTAMP
         )
     """)
-    cursor.execute("""
-        ALTER TABLE pupils
-        ADD COLUMN IF NOT EXISTS residence TEXT
-    """)
     cursor.execute("""ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS residence TEXT DEFAULT 'Day';""")
     
@@ -276,7 +272,8 @@ def init_db():
             UNIQUE(pupil_id, subject, term, year)
         )
     """)
-        # GRADING SYSTEM
+    
+    # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
             id SERIAL PRIMARY KEY,
@@ -286,7 +283,13 @@ def init_db():
             aggregate INTEGER
         )
     """)
-	cursor.execute("""ALTER TABLE grading_system ADD COLUMN IF NOT EXISTS comment TEXT;""")
+
+    # Add comment column after ensuring the table exists
+    cursor.execute("""
+        ALTER TABLE grading_system
+        ADD COLUMN IF NOT EXISTS comment TEXT
+    """)
+
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fee_payment_requests (
