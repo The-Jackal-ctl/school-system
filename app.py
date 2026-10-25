@@ -252,22 +252,23 @@ def init_db():
             FOREIGN KEY(payroll_id) REFERENCES payroll(id)
         )
     """)
-    # MARKS
-	cursor.execute("""
-	    CREATE TABLE IF NOT EXISTS marks (
-	        id SERIAL PRIMARY KEY,
-	        pupil_id TEXT REFERENCES pupils(pupil_id),
-	        subject TEXT NOT NULL,
-	        term TEXT NOT NULL,
-	        year INTEGER NOT NULL,
-	        final_score NUMERIC(5,2),
-	        grade TEXT,
-	        aggregate INTEGER,
-	        teacher_initials TEXT,
-	        teacher_id INTEGER,
-	        UNIQUE (pupil_id, subject, term, year)
-	    )
-	""")
+	
+    # MARKS TABLE
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS marks (
+            id SERIAL PRIMARY KEY,
+            pupil_id TEXT REFERENCES pupils(pupil_id),
+            subject TEXT NOT NULL,
+            term TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            final_score NUMERIC(5,2),
+            grade TEXT,
+            aggregate INTEGER,
+            teacher_initials TEXT,
+            teacher_id INTEGER,
+            UNIQUE (pupil_id, subject, term, year)
+        )
+    """)
 
     # GRADING SYSTEM
     cursor.execute("""
