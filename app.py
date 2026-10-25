@@ -253,7 +253,6 @@ def init_db():
         )
     """)
     # MARKS
-    
 	cursor.execute("""
 	    CREATE TABLE IF NOT EXISTS marks (
 	        id SERIAL PRIMARY KEY,
