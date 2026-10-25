@@ -164,7 +164,7 @@ def init_db():
     """)
     cursor.execute("""ALTER TABLE pupils
         ADD COLUMN IF NOT EXISTS residence TEXT DEFAULT 'Day';""")
-    cursor.execute("""ALTER TABLE grading_system ADD COLUMN IF NOT EXISTS comment TEXT;""")
+    
     # STAFF
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS staff (
@@ -286,6 +286,7 @@ def init_db():
             aggregate INTEGER
         )
     """)
+	cursor.execute("""ALTER TABLE grading_system ADD COLUMN IF NOT EXISTS comment TEXT;""")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fee_payment_requests (
             id SERIAL PRIMARY KEY,
