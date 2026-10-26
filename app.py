@@ -4902,90 +4902,82 @@ def teacher_report_card(pupil_id):
         # NURSERY AND PRIMARY REPORT CARD
         # BOT, MOT AND EOT
         # =====================================================
+		
+		if class_level in ['nursery', 'primary']:
+		
+		    cur.execute(
+		        """
+		        SELECT
+		            subject,
+		            final_mark,
+		            grade,
+		            aggregate,
+		            teacher_initials
+		        FROM marks
+		        WHERE pupil_id = %s
+		          AND term = %s
+		          AND year = %s
+		        ORDER BY subject
+		        """,
+		        (pupil_id, term, year)
+		    )
+		
+		    raw_marks = cur.fetchall()
+		    marks = []
+		
+		    for m in raw_marks:
+		        # Skip subjects without a saved final mark.
+		        if m['final_mark'] is None:
+		            continue
+		
+		        final_mark = round(float(m['final_mark']), 2)
+		
+		        marks.append({
+		            'subject': m['subject'],
+		            'final_mark': final_mark,
+		            'grade': m['grade'],
+		            'aggregate': m['aggregate'],
+		            'teacher_initials': m['teacher_initials']
+		        })
+		
+		    valid_marks = [
+		        m for m in marks
+		        if m['final_mark'] is not None
+		    ]
+		
+		    total_marks = sum(
+		        m['final_mark'] for m in valid_marks
+		    )
+		
+		    subject_count = len(valid_marks)
+		
+		    total_aggregate = sum(
+		        m['aggregate'] or 0 for m in valid_marks
+		    )
+		
+		    return render_template(
+		        'teacher/report_card_primary.html',
+		        pupil_id=pupil_id,
+		        full_name=full_name,
+		        class_name=class_name,
+		        photo_url=photo_url,
+		        term=term,
+		        year=year,
+		        marks=marks,
+		        total_marks=round(total_marks, 2),
+		        subject_count=subject_count,
+		        total_aggregate=total_aggregate,
+		        next_term_begins=next_term_begins,
+		        next_term_ends=next_term_ends,
+		        stamp_url=stamp_url,
+		        school_name=school_name,
+		        school_address=school_address,
+		        school_phone=school_phone,
+		        school_email=school_email,
+		        school_logo_url=school_logo_url
+		    )
 
-        if class_level in ['nursery', 'primary']:
-
-            cur.execute(
-                """
-                SELECT
-                    subject,
-                    final_mark,
-                    grade,
-                    aggregate,
-                    teacher_initials
-                FROM marks
-                WHERE pupil_id=%s
-                  AND term=%s
-                  AND year=%s
-                ORDER BY subject
-                """,
-                (pupil_id, term, year)
-            )
-
-            raw_marks = cur.fetchall()
-            marks = []
-
-            for m in raw_marks:
-                marks_scored = m['marks_scored']
-
-                entered_scores = [
-                    float(score)
-                    for score in (marks_scored)
-                    if score is not None and score != ''
-                ]
-
-                # Skip subjects without any entered marks.
-                if not entered_scores:
-                    continue
-
-                # Same calculation as the manual mark-saving route.
-                final_mark = round(marks_scored,
-                    2
-                )
-
-                marks.append({
-                    'subject': m['subject'],
-                    'final_mark': final_mark,
-                    'grade': m['grade'],
-                    'aggregate': m['aggregate'],
-		    'comment':m['comment'],
-                    'teacher_initials': m['teacher_initials']
-                })
-
-            valid_marks = [
-                m for m in marks
-                if m['final_mark'] is not None
-            ]
-            full_marks_total = sum(m['full_marks'])
-            total_marks = sum(
-                m['final_mark'] for m in valid_marks
-            )
-
-            subject_count = len(valid_marks)
-            total_aggregate = sum(m['aggregate'])
-           
-            return render_template(
-                'teacher/report_card_primary.html',
-                pupil_id=pupil_id,
-                full_name=full_name,
-                class_name=class_name,
-                photo_url=photo_url,
-                term=term,
-                year=year,
-                marks=marks,
-                total_marks=round(total_marks, 2),
-                subject_count=subject_count,
-                total_aggregate=total_aggregate,
-		comment=comment,
-                next_term_begins=next_term_begins,
-                next_term_ends=next_term_ends,
-                stamp_url=stamp_url,
-                school_name=school_name,
-                school_address=school_address,
-                school_phone=school_phone,
-                school_email=school_email,
-                school_logo_url=school_logo_url
-            )
+        
     finally:
         cur.close()
         db.close()
