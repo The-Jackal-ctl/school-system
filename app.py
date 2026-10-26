@@ -783,8 +783,7 @@ def init_db():
                 REFERENCES staff(id)
         )
     """)
-	cursor.execute("""ALTER TABLE marks
-		RENAME COLUMN final_score TO final_mark;""")
+	
     cursor.execute("""
         ALTER TABLE school_settings
         ADD COLUMN IF NOT EXISTS current_term VARCHAR(20) DEFAULT 'Term 1'
