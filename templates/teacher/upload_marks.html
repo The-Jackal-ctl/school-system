@@ -1,407 +1,181 @@
 
 {% extends "base.html" %}
-
 {% block title %}Upload Pupil Marks{% endblock %}
 
 {% block content %}
-
 <div class="container-fluid py-3">
-
     <div class="card shadow-sm border-0">
-
-        <!-- PAGE HEADER -->
-        <div class="card-header bg-primary text-white py-3">
-            <h5 class="mb-0">
-                <i class="fas fa-edit me-2"></i>
-                Nursery and Primary Marks Entry
-            </h5>
-            <small>Enter marks scored out of 100 for each pupil.</small>
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Nursery and Primary Marks Entry</h5>
+            <small>Enter each pupil's mark out of 100.</small>
         </div>
 
         <div class="card-body">
 
-            <!-- CLASS, SUBJECT, TERM AND YEAR FILTERS -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close"
+                                data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endwith %}
+
+            <!-- FILTER FORM: GET -->
             <form method="GET"
                   action="{{ url_for('teacher_upload_marks') }}"
                   class="row g-3 mb-4">
 
                 <div class="col-md-3">
-                    <label for="class" class="form-label fw-bold">
-                        Class
-                    </label>
-
-                    <select name="class"
-                            id="class"
-                            class="form-select"
-                            required
-                            onchange="this.form.submit()">
-
-                        <option value="">Select Class</option>
-
+                    <label for="class" class="form-label">Class</label>
+                    <select name="class" id="class" class="form-select" required>
+                        <option value="">Select class</option>
                         {% for cls in classes %}
                         <option value="{{ cls }}"
                             {% if cls == selected_class %}selected{% endif %}>
                             {{ cls }}
                         </option>
                         {% endfor %}
-
                     </select>
                 </div>
 
                 <div class="col-md-3">
-                    <label for="subject" class="form-label fw-bold">
-                        Subject
-                    </label>
-
-                    <select name="subject"
-                            id="subject"
-                            class="form-select"
-                            {% if not selected_class %}disabled{% endif %}
-                            onchange="this.form.submit()">
-
-                        <option value="">Select Subject</option>
-
+                    <label for="subject" class="form-label">Subject</label>
+                    <select name="subject" id="subject" class="form-select">
+                        <option value="">Select subject</option>
                         {% for sub in subjects %}
                         <option value="{{ sub }}"
                             {% if sub == selected_subject %}selected{% endif %}>
                             {{ sub }}
                         </option>
                         {% endfor %}
-
                     </select>
                 </div>
 
                 <div class="col-md-2">
-                    <label for="term" class="form-label fw-bold">
-                        Term
-                    </label>
-
-                    <select name="term"
-                            id="term"
-                            class="form-select">
-
+                    <label for="term" class="form-label">Term</label>
+                    <select name="term" id="term" class="form-select">
                         {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
                         <option value="{{ t }}"
-                            {% if term == t %}selected{% endif %}>
+                            {% if t == term %}selected{% endif %}>
                             {{ t }}
                         </option>
                         {% endfor %}
-
                     </select>
                 </div>
 
                 <div class="col-md-2">
-                    <label for="year" class="form-label fw-bold">
-                        Academic Year
-                    </label>
-
-                    <input type="number"
-                           name="year"
-                           id="year"
-                           class="form-control"
-                           value="{{ year }}"
-                           min="2000"
-                           max="2100"
-                           required>
+                    <label for="year" class="form-label">Academic year</label>
+                    <input type="number" name="year" id="year"
+                           class="form-control" min="2000" max="2100"
+                           value="{{ year }}" required>
                 </div>
 
                 <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit"
-                            class="btn btn-primary w-100">
-                        <i class="fas fa-filter me-1"></i>
-                        Apply
+                    <button type="submit" class="btn btn-primary w-100">
+                        Load Pupils
                     </button>
                 </div>
-
             </form>
 
-            <!-- INFORMATION -->
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i>
-
-                Select an assigned class and subject. Enter each pupil's
-                marks out of 100 and provide the teacher's initials.
-                The system obtains the aggregate and comment from the
-                grading table.
-
-                {% if selected_class %}
-                <hr class="my-2">
-
-                <div class="row g-2">
-                    <div class="col-md-4">
-                        <strong>Class:</strong> {{ selected_class }}
-                    </div>
-
-                    <div class="col-md-4">
-                        <strong>Subject:</strong>
-                        {{ selected_subject or 'Not selected' }}
-                    </div>
-
-                    <div class="col-md-4">
-                        <strong>Assessment:</strong> {{ term }} {{ year }}
-                    </div>
+            {% if selected_class and selected_subject %}
+                <div class="alert alert-info">
+                    <strong>Class:</strong> {{ selected_class }} |
+                    <strong>Subject:</strong> {{ selected_subject }} |
+                    <strong>Assessment:</strong> {{ term }} {{ year }}
+                    <br>
+                    Grading, aggregates and comments are obtained from
+                    your grading system.
                 </div>
-                {% endif %}
-            </div>
 
-            {% if selected_class %}
+                {% if pupils %}
+                <!-- MARKS FORM: POST TO THE SAVING ROUTE -->
+                <form method="POST"
+                      action="{{ url_for('save_manual_marks') }}"
+                      id="manualMarksForm">
 
-                {% if selected_subject %}
+                    <input type="hidden" name="class"
+                           value="{{ selected_class }}">
+                    <input type="hidden" name="subject"
+                           value="{{ selected_subject }}">
+                    <input type="hidden" name="term" value="{{ term }}">
+                    <input type="hidden" name="year" value="{{ year }}">
 
-                    {% if pupils %}
-
-                    <!-- MARKS ENTRY FORM -->
-                    <form method="POST"
-                          action="{{ url_for('teacher_upload_marks',
-                              **{
-                                  'class': selected_class,
-                                  'subject': selected_subject,
-                                  'term': term,
-                                  'year': year
-                              }) }}"
-                          id="manualMarksForm">
-
-                        <input type="hidden"
-                               name="class"
-                               value="{{ selected_class }}">
-
-                        <input type="hidden"
-                               name="subject"
-                               value="{{ selected_subject }}">
-
-                        <input type="hidden"
-                               name="term"
-                               value="{{ term }}">
-
-                        <input type="hidden"
-                               name="year"
-                               value="{{ year }}">
-
-                        <!-- TEACHER INITIALS -->
-                        <div class="row mb-4">
-                            <div class="col-md-4 col-lg-3">
-                                <label for="teacher_initials"
-                                       class="form-label fw-bold">
-                                    Teacher Initials
-                                    <span class="text-danger">*</span>
-                                </label>
-
-                                <input type="text"
-                                       name="teacher_initials"
-                                       id="teacher_initials"
-                                       class="form-control"
-                                       maxlength="20"
-                                       placeholder="e.g. J.K."
-                                       required>
-                            </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4 col-lg-3">
+                            <label for="teacher_initials" class="form-label">
+                                Teacher initials
+                            </label>
+                            <input type="text" name="teacher_initials"
+                                   id="teacher_initials" class="form-control"
+                                   maxlength="20" placeholder="e.g. J.K."
+                                   required>
                         </div>
-
-                        <!-- PUPILS MARKS TABLE -->
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-striped
-                                          table-hover align-middle">
-
-                                <thead class="table-primary">
-                                    <tr>
-                                        <th style="width: 55px;">#</th>
-                                        <th style="min-width: 100px;">
-                                            Pupil ID
-                                        </th>
-                                        <th style="min-width: 220px;">
-                                            Pupil Name
-                                        </th>
-                                        <th style="min-width: 130px;"
-                                            class="text-center">
-                                            Full Marks
-                                        </th>
-                                        <th style="min-width: 180px;"
-                                            class="text-center">
-                                            Marks Scored
-                                        </th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-
-                                    {% for pupil in pupils %}
-                                    <tr>
-
-                                        <td>{{ loop.index }}</td>
-
-                                        <td>
-                                            {{ pupil.pupil_id }}
-
-                                            <input type="hidden"
-                                                   name="pupil_id[]"
-                                                   value="{{ pupil.pupil_id }}">
-                                        </td>
-
-                                        <td class="fw-semibold">
-                                            {{ pupil.full_name }}
-                                        </td>
-
-                                        <td class="text-center">
-                                            <span class="badge bg-secondary">
-                                                100
-                                            </span>
-                                        </td>
-
-                                        <td>
-                                            <input type="number"
-                                                   name="marks_scored[]"
-                                                   class="form-control marks-input"
-                                                   min="0"
-                                                   max="100"
-                                                   step="0.01"
-                                                   inputmode="decimal"
-                                                   placeholder="Enter mark"
-                                                   value="{% if pupil.marks_scored is not none %}{{ pupil.marks_scored }}{% endif %}"
-                                                   aria-label="Marks scored for {{ pupil.full_name }}">
-
-                                            <div class="invalid-feedback">
-                                                Enter a mark between 0 and 100.
-                                            </div>
-                                        </td>
-
-                                    </tr>
-                                    {% endfor %}
-
-                                </tbody>
-
-                            </table>
-                        </div>
-
-                        <!-- TABLE FOOTER -->
-                        <div class="d-flex flex-wrap justify-content-between
-                                    align-items-center gap-2 mt-3">
-
-                            <div class="text-muted small">
-                                <i class="fas fa-info-circle me-1"></i>
-                                Leave a mark blank if it has not been entered.
-                            </div>
-
-                            <div class="d-flex gap-2">
-                                <button type="reset"
-                                        class="btn btn-outline-secondary">
-                                    <i class="fas fa-undo me-1"></i>
-                                    Reset Changes
-                                </button>
-
-                                <button type="submit"
-                                        class="btn btn-success"
-                                        id="saveMarksButton">
-                                    <i class="fas fa-save me-1"></i>
-                                    Save Marks
-                                </button>
-                            </div>
-
-                        </div>
-
-                    </form>
-
-                    {% else %}
-
-                    <div class="alert alert-warning text-center">
-                        <i class="fas fa-users me-2"></i>
-                        No pupils were found in
-                        <strong>{{ selected_class }}</strong>.
                     </div>
 
-                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped align-middle">
+                            <thead class="table-primary">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Pupil ID</th>
+                                    <th>Pupil name</th>
+                                    <th>Full marks</th>
+                                    <th>Marks scored</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pupil in pupils %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>
+                                        {{ pupil.pupil_id }}
+                                        <input type="hidden" name="pupil_id[]"
+                                               value="{{ pupil.pupil_id }}">
+                                    </td>
+                                    <td>{{ pupil.full_name }}</td>
+                                    <td class="text-center">100</td>
+                                    <td>
+                                        <input type="number"
+                                               name="marks_scored[]"
+                                               class="form-control"
+                                               min="0" max="100" step="0.01"
+                                               value="{% if pupil.marks_scored is not none %}{{ pupil.marks_scored }}{% endif %}"
+                                               placeholder="Enter mark">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex justify-content-between flex-wrap gap-2">
+                        <small class="text-muted">
+                            Blank marks are skipped; previously saved marks
+                            remain unchanged.
+                        </small>
+                        <button type="submit" class="btn btn-success">
+                            Save Marks
+                        </button>
+                    </div>
+                </form>
 
                 {% else %}
-
-                <div class="alert alert-warning text-center">
-                    <i class="fas fa-book me-2"></i>
-                    Select a subject assigned to you before entering marks.
-                </div>
-
+                    <div class="alert alert-warning">
+                        No pupils were found in {{ selected_class }}.
+                    </div>
                 {% endif %}
-
+            {% elif selected_class %}
+                <div class="alert alert-warning">
+                    Select a subject assigned to you.
+                </div>
             {% else %}
-
-            <div class="alert alert-secondary text-center py-4">
-                <i class="fas fa-users fa-2x mb-3"></i>
-
-                <h6>Select a Class to Begin</h6>
-
-                <p class="mb-0">
-                    Choose an assigned class above to display its pupils.
-                </p>
-            </div>
-
+                <div class="alert alert-secondary">
+                    Select a class and subject to load pupils.
+                </div>
             {% endif %}
-
         </div>
     </div>
 </div>
-
-<!-- MARK VALIDATION -->
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const form = document.getElementById('manualMarksForm');
-
-    if (!form) return;
-
-    const markInputs = form.querySelectorAll('.marks-input');
-
-    markInputs.forEach(function (input) {
-        input.addEventListener('input', function () {
-            const rawValue = input.value.trim();
-
-            if (rawValue === '') {
-                input.setCustomValidity('');
-                input.classList.remove('is-invalid');
-                return;
-            }
-
-            const mark = Number(rawValue);
-            const valid = Number.isFinite(mark) &&
-                          mark >= 0 &&
-                          mark <= 100;
-
-            input.setCustomValidity(
-                valid ? '' : 'Enter a mark between 0 and 100.'
-            );
-
-            input.classList.toggle('is-invalid', !valid);
-        });
-    });
-
-    form.addEventListener('submit', function (event) {
-        let valid = true;
-
-        markInputs.forEach(function (input) {
-            const rawValue = input.value.trim();
-
-            if (rawValue === '') {
-                input.setCustomValidity('');
-                input.classList.remove('is-invalid');
-                return;
-            }
-
-            const mark = Number(rawValue);
-            const markValid = Number.isFinite(mark) &&
-                              mark >= 0 &&
-                              mark <= 100;
-
-            input.setCustomValidity(
-                markValid ? '' : 'Enter a mark between 0 and 100.'
-            );
-
-            input.classList.toggle('is-invalid', !markValid);
-
-            if (!markValid) {
-                valid = false;
-            }
-        });
-
-        if (!valid) {
-            event.preventDefault();
-            form.reportValidity();
-        }
-    });
-});
-</script>
-
 {% endblock %}
