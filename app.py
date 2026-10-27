@@ -1323,70 +1323,43 @@ def get_grade_and_aggregate(percentage):
         cur.close()
 
 
+
 # =========================================================
 # A-LEVEL CLASS TEACHER COMMENT
-# BASED ON TOTAL POINTS
 # =========================================================
 def get_teacher_comment(aggregate):
+    if aggregate is None:
+        return ""
 
     if aggregate <= 8:
-        return (
-            "Excellent performance. Keep it up!"
-        )
-
-    elif aggreate <=14:
-        return (
-            "Very good performance. Maintain it!"
-        )
-
-    elif aggregate <=18:
-        return (
-            "Good performance. Continue working hard."
-        )
-
+        return "Excellent performance. Keep it up!"
+    elif aggregate <= 14:
+        return "Very good performance. Maintain it!"
+    elif aggregate <= 18:
+        return "Good performance. Continue working hard."
     elif aggregate <= 28:
-        return (
-            "Fair performance. Put in more effort"
-        )
-
+        return "Fair performance. Put in more effort."
     else:
-        return (
-            "The pupil needs significant improvement"
-        )
+        return "The pupil needs significant improvement."
 
 
 # =========================================================
 # A-LEVEL HEADTEACHER COMMENT
-# BASED ON TOTAL POINTS
 # =========================================================
 def get_headteacher_comment(aggregate):
+    if aggregate is None:
+        return ""
 
-   
     if aggregate <= 8:
-        return (
-            "Excellent performance. Keep it up!"
-        )
-
-    elif aggreate <=14:
-        return (
-            "Very good performance. Maintain it!"
-        )
-
-    elif aggregate <=18:
-        return (
-            "Good performance. Continue working hard."
-        )
-
+        return "Excellent performance. Keep it up!"
+    elif aggregate <= 14:
+        return "Very good performance. Maintain it!"
+    elif aggregate <= 18:
+        return "Good performance. Continue working hard."
     elif aggregate <= 28:
-        return (
-            "Fair performance. Put in more effort"
-        )
-
+        return "Fair performance. Put in more effort."
     else:
-        return (
-            "The pupil needs significant improvement"
-        )
-
+        return "The pupil needs significant improvement."
 
 # ==================== TEACHER ASSIGNMENT HELPERS ====================
 def get_user_assignments(user_id=None):
@@ -4691,6 +4664,7 @@ def save_manual_marks():
         }
     ))
 
+
 @app.route('/teacher/report_card/<pupil_id>')
 def teacher_report_card(pupil_id):
 
@@ -4713,21 +4687,17 @@ def teacher_report_card(pupil_id):
         # =====================================================
 
         if role in ['classteacher', 'subject_teacher']:
-
             selected_class = session.get('selected_class')
 
             if not selected_class:
                 flash('No class selected.', 'danger')
                 return redirect(url_for('teacher_pupils'))
 
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT class
                 FROM pupils
                 WHERE pupil_id = %s
-                """,
-                (pupil_id,)
-            )
+            """, (pupil_id,))
 
             res = cur.fetchone()
 
@@ -4736,21 +4706,17 @@ def teacher_report_card(pupil_id):
                 return redirect(url_for('teacher_pupils'))
 
         elif role == 'parent':
-
             parent_phone = session.get('phone')
 
             if not parent_phone:
                 flash('No phone linked.', 'danger')
                 return redirect(url_for('dashboard'))
 
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT parent_phone
                 FROM pupils
                 WHERE pupil_id = %s
-                """,
-                (pupil_id,)
-            )
+            """, (pupil_id,))
 
             res = cur.fetchone()
 
@@ -4759,15 +4725,11 @@ def teacher_report_card(pupil_id):
                 return redirect(url_for('dashboard'))
 
         elif role in ['dos', 'headteacher']:
-
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT pupil_id
                 FROM pupils
                 WHERE pupil_id = %s
-                """,
-                (pupil_id,)
-            )
+            """, (pupil_id,))
 
             if not cur.fetchone():
                 flash('Pupil not found.', 'danger')
@@ -4777,14 +4739,11 @@ def teacher_report_card(pupil_id):
         # GET PUPIL DETAILS
         # =====================================================
 
-        cur.execute(
-            """
+        cur.execute("""
             SELECT full_name, class, photo_path
             FROM pupils
             WHERE pupil_id = %s
-            """,
-            (pupil_id,)
-        )
+        """, (pupil_id,))
 
         pupil = cur.fetchone()
 
@@ -4797,17 +4756,13 @@ def teacher_report_card(pupil_id):
         photo_url = get_photo_url(pupil['photo_path'])
 
         class_upper = (class_name or '').strip().upper()
-
-        normalized_class = (
-            class_upper.replace('.', '').replace(' ', '')
-        )
+        normalized_class = class_upper.replace('.', '').replace(' ', '')
 
         # =====================================================
         # IDENTIFY CLASS LEVEL
         # =====================================================
 
         def get_class_level(name):
-
             name = re.sub(
                 r'\s+', ' ', (name or '').strip()
             ).upper()
@@ -4815,12 +4770,9 @@ def teacher_report_card(pupil_id):
             compact = re.sub(r'[\s.]', '', name)
 
             if name in {
-                'BABY',
-                'BABY CLASS',
-                'MIDDLE',
-                'MIDDLE CLASS',
-                'TOP',
-                'TOP CLASS'
+                'BABY', 'BABY CLASS',
+                'MIDDLE', 'MIDDLE CLASS',
+                'TOP', 'TOP CLASS'
             }:
                 return 'nursery'
 
@@ -4834,13 +4786,8 @@ def teacher_report_card(pupil_id):
                 return 'primary'
 
             if (
-                normalized_class.startswith('S5')
-                or normalized_class.startswith('S6')
-                or class_upper in [
-                    'A-LEVEL',
-                    'A LEVEL',
-                    'ALEVEL'
-                ]
+                normalized_class.startswith(('S5', 'S6'))
+                or class_upper in {'A-LEVEL', 'A LEVEL', 'ALEVEL'}
             ):
                 return 'alevel'
 
@@ -4849,39 +4796,25 @@ def teacher_report_card(pupil_id):
         class_level = get_class_level(class_name)
 
         # =====================================================
-        # CURRENT REPORT CARD TERM AND YEAR
+        # CURRENT TERM AND YEAR
         # =====================================================
 
-        cur.execute(
-            """
+        cur.execute("""
             SELECT current_term, current_year
             FROM school_settings
             WHERE id = 1
-            """
-        )
+        """)
 
-        report_settings = cur.fetchone()
+        report_settings = cur.fetchone() or {}
 
-        term = (
-            report_settings['current_term']
-            if report_settings
-            and report_settings['current_term']
-            else 'Term 1'
-        )
-
-        year = (
-            report_settings['current_year']
-            if report_settings
-            and report_settings['current_year']
-            else datetime.now().year
-        )
+        term = report_settings.get('current_term') or 'Term 1'
+        year = report_settings.get('current_year') or datetime.now().year
 
         # =====================================================
         # SCHOOL DETAILS
         # =====================================================
 
-        cur.execute(
-            """
+        cur.execute("""
             SELECT
                 school_name,
                 school_address,
@@ -4893,15 +4826,11 @@ def teacher_report_card(pupil_id):
                 headteacher_stamp
             FROM school_settings
             WHERE id = 1
-            """
-        )
+        """)
 
         school = cur.fetchone() or {}
 
-        school_name = (
-            school.get('school_name') or 'YOUR SCHOOL NAME'
-        )
-
+        school_name = school.get('school_name') or 'YOUR SCHOOL NAME'
         school_address = school.get('school_address') or ''
         school_phone = school.get('school_phone') or ''
         school_email = school.get('school_email') or ''
@@ -4931,74 +4860,82 @@ def teacher_report_card(pupil_id):
 
         # =====================================================
         # NURSERY AND PRIMARY REPORT CARD
-        # BOT, MOT AND EOT
         # =====================================================
 
         if class_level in ['nursery', 'primary']:
 
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT
-                    subject,
-                    final_mark,
-                    grade,
-                    aggregate,
-                    teacher_initials
-                FROM marks
-                WHERE pupil_id = %s
-                  AND term = %s
-                  AND year = %s
-                ORDER BY subject
-                """,
-                (pupil_id, term, year)
-            )
+                    m.subject,
+                    m.final_mark,
+                    m.grade,
+                    m.aggregate,
+                    m.teacher_initials,
+                    gs.comment
+                FROM marks AS m
+                LEFT JOIN grading_system AS gs
+                    ON gs.grade = m.grade
+                    AND m.final_mark BETWEEN gs.min_score AND gs.max_score
+                WHERE m.pupil_id = %s
+                  AND m.term = %s
+                  AND m.year = %s
+                ORDER BY m.subject
+            """, (pupil_id, term, year))
 
             raw_marks = cur.fetchall()
             marks = []
 
             for m in raw_marks:
-
-                # Skip subjects without a saved final mark.
                 if m['final_mark'] is None:
                     continue
 
-                final_mark = round(
-                    float(m['final_mark']),
-                    2
-                )
+                final_mark = round(float(m['final_mark']), 2)
 
                 marks.append({
                     'subject': m['subject'],
                     'final_mark': final_mark,
                     'grade': m['grade'],
                     'aggregate': m['aggregate'],
-                    'teacher_initials': m['teacher_initials']
+                    'comment': m['comment'] or '',
+                    'teacher_initials': m['teacher_initials'],
+                    'full_marks': 100
                 })
 
             # =================================================
-            # CALCULATE REPORT TOTALS
+            # CALCULATE TOTALS
             # =================================================
 
-            valid_marks = [
-                m for m in marks
-                if m['final_mark'] is not None
-            ]
-
             total_marks = sum(
-                m['final_mark']
-                for m in valid_marks
+                m['final_mark'] for m in marks
             )
 
-            subject_count = len(valid_marks)
+            subject_count = len(marks)
 
             total_aggregate = sum(
-                m['aggregate'] or 0
-                for m in valid_marks
+                int(m['aggregate'] or 0) for m in marks
             )
 
-            # ================================================
-            # RENDER PRIMARY / NURSERY REPORT CARD
-            # ================================================
+            full_marks_total = subject_count * 100
+
+            # =================================================
+            # GENERATE CLASS TEACHER AND HEADTEACHER COMMENTS
+            # =================================================
+
+            if marks:
+                class_teacher_comment = get_teacher_comment(
+                    total_aggregate
+                )
+
+                headteacher_comment = get_headteacher_comment(
+                    total_aggregate
+                )
+            else:
+                class_teacher_comment = ''
+                headteacher_comment = ''
+
+            # =================================================
+            # RENDER REPORT CARD
+            # =================================================
 
             return render_template(
                 'teacher/report_card.html',
@@ -5010,8 +4947,15 @@ def teacher_report_card(pupil_id):
                 year=year,
                 marks=marks,
                 total_marks=round(total_marks, 2),
+                full_marks_total=full_marks_total,
                 subject_count=subject_count,
                 total_aggregate=total_aggregate,
+                division='',
+                conduct='',
+                class_teacher_comment=class_teacher_comment,
+                headteacher_comment=headteacher_comment,
+                parent_comment='',
+                fees_balance='',
                 next_term_begins=next_term_begins,
                 next_term_ends=next_term_ends,
                 stamp_url=stamp_url,
@@ -5022,9 +4966,9 @@ def teacher_report_card(pupil_id):
                 school_logo_url=school_logo_url
             )
 
-        # Other class levels are not handled by the supplied
-        # nursery/primary branch. Add your existing O-Level and
-        # A-Level report-card logic here if it exists.
+        # =====================================================
+        # OTHER CLASS LEVELS
+        # =====================================================
 
         flash(
             'Report card for this class level is not available.',
@@ -5842,295 +5786,120 @@ def teacher_upload_pupils():
 
     return redirect(url_for('teacher_pupils'))
 
-@app.route('/teacher/print_all_report_cards')
+
+@app.route('/teacher/print_all_report_cards', methods=['GET'])
 def print_all_report_cards():
-
-    # ============================================================
-    # PERMISSION
-    # ============================================================
-
-    if not check_permission([
-        'classteacher',
-        'subject_teacher',
-        'dos',
-        'headteacher'
-    ]):
-        abort(403)
-
-    db = get_db_dict()
+    db = get_db()
     cur = db.cursor()
 
     try:
-        # ========================================================
-        # CLASS, TERM AND YEAR
-        # ========================================================
+        # -------------------------------------------------
+        # GET CLASS, TERM AND YEAR
+        # -------------------------------------------------
+        class_name = request.args.get('class_name') or session.get('class_name')
 
-        class_name = request.args.get(
-            'class_name',
-            session.get('selected_class', '')
-        ).strip()
+        cur.execute("""
+            SELECT current_term, current_year,
+                   school_name, school_address, school_phone,
+                   school_email, logo_url,
+                   next_term_begins, next_term_ends,
+                   headteacher_stamp
+            FROM school_settings
+            LIMIT 1
+        """)
+        settings = cur.fetchone()
+
+        if not settings:
+            return "School settings not found.", 404
+
+        term = request.args.get('term') or settings['current_term']
+        year = request.args.get('year') or settings['current_year']
 
         if not class_name:
-            flash('No class selected.', 'danger')
-            return redirect(url_for('teacher_pupils'))
+            return "Please select a class.", 400
 
-        # ========================================================
-        # ALLOW NURSERY AND PRIMARY ONLY
-        # ========================================================
-
-        def get_class_level(name):
-
-            name = re.sub(
-                r'\s+', ' ', (name or '').strip()
-            ).upper()
-
-            compact = re.sub(r'[\s.]', '', name)
-
-            if name in {
-                'BABY',
-                'BABY CLASS',
-                'MIDDLE',
-                'MIDDLE CLASS',
-                'TOP',
-                'TOP CLASS'
-            }:
-                return 'nursery'
-
-            if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
-                return 'primary'
-
-            if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
-                return 'primary'
-
-            if re.fullmatch(r'P[1-7][A-Z]*', compact):
-                return 'primary'
-
-            return None
-
-        class_level = get_class_level(class_name)
-
-        if class_level not in ('nursery', 'primary'):
-            flash(
-                'This report printing page is for Nursery and Primary classes only.',
-                'danger'
-            )
-            return redirect(url_for('teacher_pupils'))
-
-        # ========================================================
-        # GET CURRENT TERM AND YEAR
-        # ========================================================
-
-        cur.execute(
-            """
-            SELECT current_term, current_year
-            FROM school_settings
-            WHERE id = 1
-            """
-        )
-
-        report_settings = cur.fetchone()
-
-        allowed_terms = [
-            'Term 1',
-            'Term 2',
-            'Term 3'
-        ]
-
-        term = (
-            report_settings['current_term']
-            if report_settings
-            and report_settings['current_term']
-            else 'Term 1'
-        )
-
-        year = (
-            report_settings['current_year']
-            if report_settings
-            and report_settings['current_year']
-            else datetime.now().year
-        )
-
-        if term not in allowed_terms:
-            term = 'Term 1'
-
-        # Optional URL overrides.
-        url_term = request.args.get('term')
-
-        if url_term and url_term.strip() in allowed_terms:
-            term = url_term.strip()
-
-        url_year = request.args.get('year', type=int)
-
-        if url_year and 2000 <= url_year <= 2100:
-            year = url_year
-
-        # ========================================================
-        # SCHOOL DETAILS
-        # ========================================================
-
-        cur.execute(
-            """
-            SELECT
-                school_name,
-                school_address,
-                school_phone,
-                school_email,
-                logo_url,
-                next_term_begins,
-                next_term_ends,
-                headteacher_stamp
-            FROM school_settings
-            WHERE id = 1
-            """
-        )
-
-        school = cur.fetchone() or {}
-
-        school_name = (
-            school.get('school_name') or 'YOUR SCHOOL NAME'
-        )
-
-        school_address = school.get('school_address') or ''
-        school_phone = school.get('school_phone') or ''
-        school_email = school.get('school_email') or ''
-
-        school_logo_url = (
-            url_for(
-                'static',
-                filename='uploads/' + school['logo_url']
-            )
-            if school.get('logo_url')
-            else url_for(
-                'static',
-                filename='images/logo.png'
-            )
-        )
-
-        next_term_begins = school.get('next_term_begins')
-        next_term_ends = school.get('next_term_ends')
-
-        stamp_url = (
-            url_for(
-                'static',
-                filename='uploads/' + school['headteacher_stamp']
-            )
-            if school.get('headteacher_stamp')
-            else None
-        )
-
-        # ========================================================
+        # -------------------------------------------------
         # GET PUPILS IN THE SELECTED CLASS
-        # ========================================================
-
-        cur.execute(
-            """
-            SELECT
-                pupil_id,
-                full_name,
-                class,
-                lin,
-                photo_path
+        # -------------------------------------------------
+        cur.execute("""
+            SELECT pupil_id, full_name, class, lin, photo_path
             FROM pupils
             WHERE class = %s
             ORDER BY full_name
-            """,
-            (class_name,)
-        )
+        """, (class_name,))
 
         pupils = cur.fetchall()
         reports = []
 
-        # ========================================================
-        # BUILD EACH PUPIL'S NURSERY / PRIMARY REPORT
-        # ========================================================
-
+        # -------------------------------------------------
+        # BUILD EACH PUPIL'S REPORT CARD
+        # -------------------------------------------------
         for pupil in pupils:
-
             pupil_id = pupil['pupil_id']
             full_name = pupil['full_name']
             pupil_class = pupil['class']
             lin = pupil['lin']
+            photo_url = pupil['photo_path']
 
-            photo_url = get_photo_url(
-                pupil['photo_path']
-            )
-
-            # ====================================================
-            # GET SAVED SUBJECT MARKS
-            # Consistent with teacher_report_card()
-            # ====================================================
-
-            cur.execute(
-                """
+            cur.execute("""
                 SELECT
-                    subject,
-                    final_mark,
-                    grade,
-                    aggregate,
-                    teacher_initials
-                FROM marks
-                WHERE pupil_id = %s
-                  AND term = %s
-                  AND year = %s
-                ORDER BY subject
-                """,
-                (
-                    pupil_id,
-                    term,
-                    year
-                )
-            )
+                    m.subject,
+                    m.final_mark,
+                    m.grade,
+                    m.aggregate,
+                    m.teacher_initials,
+                    gs.comment
+                FROM marks AS m
+                LEFT JOIN grading_system AS gs
+                    ON gs.grade = m.grade
+                    AND m.final_mark BETWEEN gs.min_score AND gs.max_score
+                WHERE m.pupil_id = %s
+                  AND m.term = %s
+                  AND m.year = %s
+                ORDER BY m.subject
+            """, (pupil_id, term, year))
 
             raw_marks = cur.fetchall()
             marks = []
 
-            # ====================================================
-            # PREPARE SUBJECT RESULTS
-            # ====================================================
-
-            for m in raw_marks:
-
-                # Skip subjects without a saved final mark.
-                if m['final_mark'] is None:
+            for mark in raw_marks:
+                if mark['final_mark'] is None:
                     continue
 
-                final_mark = round(
-                    float(m['final_mark']),
-                    2
-                )
+                final_mark = round(float(mark['final_mark']), 2)
 
                 marks.append({
-                    'subject': m['subject'],
+                    'subject': mark['subject'],
                     'final_mark': final_mark,
-                    'grade': m['grade'],
-                    'aggregate': m['aggregate'],
-                    'teacher_initials': m['teacher_initials']
+                    'grade': mark['grade'],
+                    'aggregate': mark['aggregate'],
+                    'comment': mark['comment'] or '',
+                    'teacher_initials': mark['teacher_initials'],
+                    'full_marks': 100
                 })
 
-            # ====================================================
-            # CALCULATE REPORT TOTALS
-            # ====================================================
-
-            valid_marks = [
-                m for m in marks
-                if m['final_mark'] is not None
-            ]
-
             total_marks = sum(
-                m['final_mark']
-                for m in valid_marks
+                mark['final_mark'] for mark in marks
             )
 
-            subject_count = len(valid_marks)
+            subject_count = len(marks)
 
             total_aggregate = sum(
-                m['aggregate'] or 0
-                for m in valid_marks
+                int(mark['aggregate'] or 0)
+                for mark in marks
             )
 
-            # ====================================================
-            # ADD PUPIL REPORT
-            # ====================================================
+            # Generate comments only when the pupil has marks.
+            if marks:
+                class_teacher_comment = get_teacher_comment(
+                    total_aggregate
+                )
+                headteacher_comment = get_headteacher_comment(
+                    total_aggregate
+                )
+            else:
+                class_teacher_comment = ''
+                headteacher_comment = ''
 
             reports.append({
                 'pupil_id': pupil_id,
@@ -6140,33 +5909,38 @@ def print_all_report_cards():
                 'photo_url': photo_url,
                 'marks': marks,
                 'total_marks': round(total_marks, 2),
+                'full_marks_total': subject_count * 100,
                 'subject_count': subject_count,
-                'aggregate': total_aggregate
+                'total_aggregate': total_aggregate,
+                'division': '',
+                'conduct': '',
+                'class_teacher_comment': class_teacher_comment,
+                'headteacher_comment': headteacher_comment,
+                'parent_comment': '',
+                'fees_balance': ''
             })
 
-        # ========================================================
-        # PRINT NURSERY / PRIMARY REPORT CARDS
-        # ========================================================
-
+        # -------------------------------------------------
+        # RENDER ALL REPORT CARDS
+        # -------------------------------------------------
         return render_template(
             'teacher/print_all_report_cards_primary.html',
             reports=reports,
             class_name=class_name,
             term=term,
             year=year,
-            school_name=school_name,
-            school_address=school_address,
-            school_phone=school_phone,
-            school_email=school_email,
-            school_logo_url=school_logo_url,
-            next_term_begins=next_term_begins,
-            next_term_ends=next_term_ends,
-            stamp_url=stamp_url
+            school_name=settings['school_name'],
+            school_address=settings['school_address'],
+            school_phone=settings['school_phone'],
+            school_email=settings['school_email'],
+            school_logo_url=settings['logo_url'],
+            next_term_begins=settings['next_term_begins'],
+            next_term_ends=settings['next_term_ends'],
+            stamp_url=settings['headteacher_stamp']
         )
 
     finally:
         cur.close()
-        db.close()
 
 
 @app.route('/bursar/dashboard')
