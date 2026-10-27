@@ -8084,6 +8084,7 @@ def bursar_bulk_reminder():
     flash(f'{sent} reminders sent.', 'success')
     return redirect(url_for('bursar_pupils'))
 
+
 @app.route('/bursar/clearance/<pupil_id>')
 def bursar_clearance(pupil_id):
 
@@ -8093,59 +8094,45 @@ def bursar_clearance(pupil_id):
     db = get_db_dict()
     cur = db.cursor()
 
-    # ==============================
-    # GET PUPIL
-    # ==============================
+    try:
+        cur.execute("""
+            SELECT
+                pupil_id,
+                full_name,
+                "class",
+                parent_phone,
+                fees_balance,
+                fees_total,
+                fees_paid,
+                photo_path,
+                admission_date
+            FROM pupils
+            WHERE pupil_id = %s
+        """, (pupil_id,))
 
-    cur.execute("""
-        SELECT
-            pupil_id,
-            full_name,
-            class,
-            parent_phone,
-            fees_balance,
-            fees_total,
-            fees_paid,
-            photo_path,
-            admission_date
-        FROM pupils
-        WHERE pupil_id=%s
-    """, (pupil_id,))
+        pupil = cur.fetchone()
 
-    pupil = cur.fetchone()
+        if not pupil:
+            flash('Pupil not found.', 'danger')
+            return redirect(url_for('bursar_pupils'))
 
-    if not pupil:
+        cur.execute("""
+            SELECT
+                school_name,
+                school_address,
+                school_phone,
+                school_email,
+                logo_url,
+                headteacher_stamp
+            FROM school_settings
+            WHERE id = 1
+        """)
+
+        school = cur.fetchone()
+
+    finally:
         cur.close()
-
-        flash('Pupil not found', 'danger')
-
-        return redirect(
-            url_for('bursar_pupils')
-        )
-
-    # ==============================
-    # GET SCHOOL SETTINGS
-    # ==============================
-
-    cur.execute("""
-        SELECT
-            school_name,
-            school_address,
-            school_phone,
-            school_email,
-            logo_url,
-            headteacher_stamp
-        FROM school_settings
-        WHERE id=1
-    """)
-
-    school = cur.fetchone()
-
-    cur.close()
-
-    # ==============================
-    # DEFAULT SETTINGS IF NONE EXIST
-    # ==============================
+        db.close()
 
     if not school:
         school = {
@@ -8157,60 +8144,38 @@ def bursar_clearance(pupil_id):
             'headteacher_stamp': None
         }
 
-    # ==============================
-    # FEES
-    # ==============================
+    # Normalize fee values.
+    for field in ('fees_total', 'fees_paid', 'fees_balance'):
+        pupil[field] = pupil.get(field) or 0
 
-    pupil['fees_total'] = (
-        pupil.get('fees_total') or 0
+    # Resolve image URLs.
+    pupil['photo_url'] = (
+        get_photo_url(pupil.get('photo_path'))
+        if pupil.get('photo_path')
+        else None
     )
 
-    pupil['fees_paid'] = (
-        pupil.get('fees_paid') or 0
+    logo_url = (
+        get_photo_url(school['logo_url'])
+        if school.get('logo_url')
+        else None
     )
 
-    pupil['fees_balance'] = (
-        pupil.get('fees_balance') or 0
+    stamp_url = (
+        get_photo_url(school['headteacher_stamp'])
+        if school.get('headteacher_stamp')
+        else None
     )
-
-    # ==============================
-    # PUPIL PHOTO
-    # ==============================
-
-    pupil['photo_url'] = get_photo_url(
-        pupil.get('photo_path')
-    )
-
-    # ==============================
-    # SCHOOL LOGO
-    # ==============================
-
-    logo_url = None
-
-    if school.get('logo_url'):
-        logo_url = get_photo_url(
-            school['logo_url']
-        )
-
-    # ==============================
-    # SCHOOL STAMP
-    # ==============================
-
-    stamp_url = None
-
-    if school.get('headteacher_stamp'):
-        stamp_url = get_photo_url(
-            school['headteacher_stamp']
-        )
 
     return render_template(
         'bursar/clearance.html',
         pupil=pupil,
         school=school,
-        school_settings=school,
         logo_url=logo_url,
-        stamp_url=stamp_url
+        stamp_url=stamp_url,
+        issued_at=datetime.now()
     )
+
 # =========================================================
 # BURSAR - INDIVIDUAL PUPIL FEE DETAILS
 # =========================================================
