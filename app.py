@@ -269,19 +269,6 @@ def init_db():
             UNIQUE (pupil_id, subject, term, year)
         )
     """)
-	
-	# =====================================================
-	# FIX MISSING FINAL_MARK COLUMN
-	# =====================================================
-	
-	cursor.execute("""
-	    ALTER TABLE marks
-	    ADD COLUMN IF NOT EXISTS final_mark NUMERIC(5,2)
-	""")
-	
-
-
-
     # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
