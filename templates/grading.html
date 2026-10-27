@@ -5,24 +5,45 @@
 {% block content %}
 <div class="card shadow mb-4">
     <div class="card-header bg-primary text-white">
-        Grading System
+        <h5 class="mb-0">Grading System</h5>
     </div>
 
     <div class="card-body">
         <p>
-            Upload an Excel file with these four column headers:
+            Upload an Excel file (.xlsx) with these four required column
+            headers:
             <strong>min_score, max_score, grade, aggregate</strong>.
         </p>
 
-        <div class="alert alert-warning">
-            Uploading a valid file replaces all existing grading rules.
+        <p>
+            You may also include an optional
+            <strong>comment</strong> column to save comments for each
+            grading band.
+        </p>
+
+        <div class="alert alert-warning" role="alert">
+            <strong>Important:</strong> Uploading a valid file replaces
+            all existing grading rules. Make sure your Excel file
+            contains every grading band you want to keep.
         </div>
 
-        <form method="POST" enctype="multipart/form-data">
+        <div class="alert alert-info" role="alert">
+            <strong>Example Excel headers:</strong>
+            <code>min_score, max_score, grade, aggregate, comment</code>
+            <br>
+            The comment column is optional.
+        </div>
+
+        <form
+            method="POST"
+            action="{{ url_for('grading') }}"
+            enctype="multipart/form-data"
+        >
             <div class="mb-3">
                 <label for="grading_file" class="form-label">
                     Excel file (.xlsx)
                 </label>
+
                 <input
                     type="file"
                     name="grading_file"
@@ -34,23 +55,27 @@
             </div>
 
             <button type="submit" class="btn btn-primary">
+                <i class="fas fa-upload"></i>
                 Upload and Replace
             </button>
         </form>
 
         <hr>
-        <h5>Current Grading Rules</h5>
+
+        <h5 class="mb-3">Current Grading Rules</h5>
 
         <div class="table-responsive">
-            <table class="table table-sm table-bordered">
-                <thead>
+            <table class="table table-sm table-bordered table-striped align-middle">
+                <thead class="table-light">
                     <tr>
                         <th>Minimum Score</th>
                         <th>Maximum Score</th>
                         <th>Grade</th>
-                        <th>Aggregates</th>
+                        <th>Aggregate</th>
+                        <th>Comment</th>
                     </tr>
                 </thead>
+
                 <tbody>
                     {% for r in rules %}
                     <tr>
@@ -58,10 +83,11 @@
                         <td>{{ r[1] }}</td>
                         <td>{{ r[2] }}</td>
                         <td>{{ r[3] }}</td>
+                        <td>{{ r[4] if r[4] else '—' }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="4" class="text-center">
+                        <td colspan="5" class="text-center text-muted">
                             No grading rules have been uploaded yet.
                         </td>
                     </tr>
