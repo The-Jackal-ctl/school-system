@@ -6929,6 +6929,7 @@ def bursar_fees():
         term=term
     )
     
+
 # ADD PUPIL FEE STRUCTURE
 @app.route('/bursar/fees/add', methods=['POST'])
 def bursar_fees_add():
@@ -6936,22 +6937,15 @@ def bursar_fees_add():
     if not check_permission(['bursar']):
         abort(403)
 
-    import re
+    # =====================================================
+    # GET AND VALIDATE FORM VALUES
+    # =====================================================
 
-    level = request.form.get(
-        'level',
-        ''
-    ).strip()
+    level = request.form.get('level', '').strip()
 
-    residence = request.form.get(
-        'residence',
-        ''
-    ).strip()
+    residence = request.form.get('residence', '').strip()
 
-    term = request.form.get(
-        'term',
-        'Term 1'
-    ).strip()
+    term = request.form.get('term', 'Term 1').strip()
 
     year = request.form.get(
         'year',
@@ -6959,78 +6953,101 @@ def bursar_fees_add():
         type=int
     )
 
-    description = request.form.get(
-        'description',
-        ''
-    ).strip()
+    description = request.form.get('description', '').strip()
 
-    amount = request.form.get(
-        'amount',
-        ''
-    ).strip()
+    amount_input = request.form.get('amount', '').strip()
 
     # =====================================================
-    # NORMALIZE AND VALIDATE NURSERY / PRIMARY LEVEL
+    # VALIDATE YEAR
     # =====================================================
 
-    normalized_level = re.sub(
-        r'\s+',
-        ' ',
-        level
-    ).upper()
+    if not year or year < 2000 or year > 2100:
+        flash('Please select a valid academic year.', 'danger')
 
-    compact_level = re.sub(
-        r'[\s.]',
-        '',
-        normalized_level
-    )
-
-    nursery_levels = {
-        'BABY': 'Baby',
-        'BABY CLASS': 'Baby',
-        'MIDDLE': 'Middle',
-        'MIDDLE CLASS': 'Middle',
-        'TOP': 'Top',
-        'TOP CLASS': 'Top'
-    }
-
-    if normalized_level in nursery_levels:
-        level = nursery_levels[normalized_level]
-
-    else:
-        match = re.fullmatch(
-            r'PRIMARY\s*([1-7])\s*[A-Z]*',
-            normalized_level
+        return redirect(
+            url_for(
+                'bursar_fees',
+                year=datetime.now().year,
+                term=term if term in ['Term 1', 'Term 2', 'Term 3']
+                else 'Term 1'
+            )
         )
 
-        if not match:
-            match = re.fullmatch(
-                r'P\.?\s*([1-7])\s*[A-Z]*',
-                normalized_level
-            )
+    # =====================================================
+    # VALIDATE CLASS AGAINST THE DATABASE
+    # Classes must exist in pupils.class
+    # =====================================================
 
-        if not match:
-            match = re.fullmatch(
-                r'P([1-7])[A-Z]*',
-                compact_level
-            )
+    if not level:
+        flash('Please select a class.', 'danger')
 
-        if match:
-            level = f"Primary {match.group(1)}"
-        else:
-            flash(
-                'Invalid class level. Select Baby, Middle, '
-                'Top or Primary 1 to Primary 7.',
-                'danger'
+        return redirect(
+            url_for(
+                'bursar_fees',
+                year=year,
+                term=term if term in ['Term 1', 'Term 2', 'Term 3']
+                else 'Term 1'
             )
+        )
 
-            return redirect(
-                url_for(
-                    'bursar_fees',
-                    year=year,
-                    term=term
-                )
+    db = get_db_dict()
+    cur = db.cursor()
+
+    try:
+        cur.execute("""
+            SELECT DISTINCT TRIM(class) AS class_name
+            FROM pupils
+            WHERE class IS NOT NULL
+              AND TRIM(class) <> ''
+        """)
+
+        database_classes = {
+            row['class_name']
+            for row in cur.fetchall()
+            if row.get('class_name')
+        }
+
+    except Exception as e:
+        db.rollback()
+
+        app.logger.exception(
+            "Could not retrieve classes from pupils table"
+        )
+
+        flash(
+            'Could not verify the selected class. Please try again.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'bursar_fees',
+                year=year,
+                term=term if term in ['Term 1', 'Term 2', 'Term 3']
+                else 'Term 1'
             )
+        )
+
+    finally:
+        cur.close()
+        db.close()
+
+    # Exact match against the classes returned by the database.
+    if level not in database_classes:
+        flash(
+            'Invalid class. Please select a class that exists '
+            'in the pupils database.',
+            'danger'
+        )
+
+        return redirect(
+            url_for(
+                'bursar_fees',
+                year=year,
+                term=term if term in ['Term 1', 'Term 2', 'Term 3']
+                else 'Term 1'
+            )
+        )
 
     # =====================================================
     # VALIDATE RESIDENCE
@@ -7046,7 +7063,8 @@ def bursar_fees_add():
             url_for(
                 'bursar_fees',
                 year=year,
-                term=term
+                term=term if term in ['Term 1', 'Term 2', 'Term 3']
+                else 'Term 1'
             )
         )
 
@@ -7055,10 +7073,7 @@ def bursar_fees_add():
     # =====================================================
 
     if term not in ['Term 1', 'Term 2', 'Term 3']:
-        flash(
-            'Invalid term selected.',
-            'danger'
-        )
+        flash('Invalid term selected.', 'danger')
 
         return redirect(
             url_for(
@@ -7073,7 +7088,7 @@ def bursar_fees_add():
     # =====================================================
 
     try:
-        amount = float(amount)
+        amount = float(amount_input)
 
         if amount < 0:
             raise ValueError
@@ -7093,7 +7108,7 @@ def bursar_fees_add():
         )
 
     # =====================================================
-    # SAVE FEE STRUCTURE WITHOUT PROGRAMME
+    # SAVE FEE STRUCTURE
     # =====================================================
 
     db = get_db_dict()
@@ -7142,8 +7157,13 @@ def bursar_fees_add():
                 'danger'
             )
         else:
+            app.logger.exception(
+                "Failed to save pupil fee structure"
+            )
+
             flash(
-                f'Could not save fee structure: {e}',
+                'Could not save the fee structure. '
+                'Please check the application logs.',
                 'danger'
             )
 
@@ -7158,6 +7178,7 @@ def bursar_fees_add():
             term=term
         )
     )
+
 
 @app.route(
     '/bursar/fees/delete/<int:fee_id>',
@@ -7216,124 +7237,67 @@ def bursar_fees_delete(fee_id):
 
     return redirect(url_for('bursar_fees'))
 
+
 @app.route('/bursar/record_payment', methods=['POST'])
 def bursar_record_payment():
-
     if not check_permission(['bursar']):
         abort(403)
 
     from decimal import Decimal, InvalidOperation
-    import re
-
-    # =====================================================
-    # GET FORM DATA
-    # =====================================================
 
     pupil_id = (request.form.get('pupil_id') or '').strip()
     payment_method = (
         request.form.get('payment_method') or 'Cash'
     ).strip()
     notes = (request.form.get('notes') or '').strip()
-
-    term = (request.form.get('term') or '').strip()
-
-    try:
-        year = int(request.form.get('year', ''))
-    except (ValueError, TypeError):
-        flash('Please select a valid academic year.', 'danger')
-        return redirect(
-            url_for('bursar_pupil_detail', pupil_id=pupil_id)
-            if pupil_id else url_for('bursar_pupils')
-        )
+    term = (request.form.get('term') or 'Term 1').strip()
 
     try:
-        amount = Decimal(
-            (request.form.get('amount') or '').strip()
-        )
+        year = int(request.form.get('year', datetime.now().year))
+        amount = Decimal((request.form.get('amount') or '').strip())
 
         if not amount.is_finite() or amount <= 0:
-            raise InvalidOperation
+            raise ValueError
 
         amount = amount.quantize(Decimal('0.01'))
 
-    except (InvalidOperation, ValueError):
-        flash('Enter a valid payment amount greater than zero.', 'danger')
+    except (ValueError, TypeError, InvalidOperation):
+        flash('Enter a valid year and payment amount.', 'danger')
         return redirect(
             url_for('bursar_pupil_detail', pupil_id=pupil_id)
             if pupil_id else url_for('bursar_pupils')
         )
 
-    # =====================================================
-    # VALIDATE INPUT
-    # =====================================================
-
     if not pupil_id:
-        flash('Pupil ID is required.', 'danger')
+        flash('Please select a pupil.', 'danger')
         return redirect(url_for('bursar_pupils'))
 
     if term not in ('Term 1', 'Term 2', 'Term 3'):
         flash('Please select a valid term.', 'danger')
-        return redirect(
-            url_for('bursar_pupil_detail', pupil_id=pupil_id)
-        )
+        return redirect(url_for('bursar_pupil_detail', pupil_id=pupil_id))
 
     if year < 2000 or year > 2100:
         flash('Please select a valid academic year.', 'danger')
-        return redirect(
-            url_for('bursar_pupil_detail', pupil_id=pupil_id)
-        )
+        return redirect(url_for('bursar_pupil_detail', pupil_id=pupil_id))
 
     if payment_method not in ('Cash', 'Bank', 'Mobile Money', 'Cheque'):
         flash('Please select a valid payment method.', 'danger')
-        return redirect(
-            url_for('bursar_pupil_detail', pupil_id=pupil_id)
-        )
-
-    # =====================================================
-    # IDENTIFY NURSERY AND PRIMARY CLASSES
-    # =====================================================
-
-    def is_nursery_or_primary(class_name):
-        name = re.sub(
-            r'\s+', ' ', (class_name or '').strip()
-        ).upper()
-
-        compact = re.sub(r'[\s.]', '', name)
-
-        if name in {
-            'BABY', 'BABY CLASS',
-            'MIDDLE', 'MIDDLE CLASS',
-            'TOP', 'TOP CLASS'
-        }:
-            return True
-
-        if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
-            return True
-
-        if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
-            return True
-
-        if re.fullmatch(r'P[1-7][A-Z]*', compact):
-            return True
-
-        return False
-
-    # =====================================================
-    # CONNECT TO DATABASE
-    # =====================================================
+        return redirect(url_for('bursar_pupil_detail', pupil_id=pupil_id))
 
     db = get_db_dict()
     cur = db.cursor()
 
     try:
-        # Lock the pupil record to serialize payments for this pupil.
+        # Lock the pupil record while updating their balance.
         cur.execute("""
             SELECT
                 pupil_id,
                 full_name,
                 class,
-                residence,
-                parent_phone
+                parent_phone,
+                fees_total,
+                fees_paid,
+                fees_balance
             FROM pupils
             WHERE pupil_id = %s
             FOR UPDATE
@@ -7344,92 +7308,23 @@ def bursar_record_payment():
         if not pupil:
             raise ValueError('Pupil not found.')
 
-        if not is_nursery_or_primary(pupil.get('class')):
-            raise ValueError(
-                'Payments through this route are restricted '
-                'to Nursery and Primary pupils.'
-            )
-
-        residence = (pupil.get('residence') or '').strip()
-
-        if residence not in ('Day', 'Boarding'):
-            raise ValueError(
-                'The pupil residence must be set to Day or Boarding '
-                'before recording payment.'
-            )
-
-        # =================================================
-        # GET THE APPLICABLE FEES STRUCTURE
-        # =================================================
-
-        cur.execute("""
-            SELECT amount
-            FROM pupil_fee_structure
-            WHERE LOWER(TRIM(level)) = LOWER(TRIM(%s))
-              AND LOWER(TRIM(residence)) = LOWER(TRIM(%s))
-              AND term = %s
-              AND year = %s
-            FOR SHARE
-        """, (
-            pupil['class'],
-            residence,
-            term,
-            year
-        ))
-
-        fee_rows = cur.fetchall()
-
-        if len(fee_rows) != 1:
-            raise ValueError(
-                'Could not find exactly one fees structure for '
-                f"class {pupil['class']}, residence {residence}, "
-                f"{term}, {year}. Check the fees structure."
-            )
-
-        fees_total = Decimal(str(fee_rows[0]['amount'] or 0))
-
-        if not fees_total.is_finite() or fees_total < 0:
-            raise ValueError('The fees structure contains an invalid amount.')
-
-        # =================================================
-        # SUM PAYMENTS FOR THIS TERM AND YEAR
-        # =================================================
-
-        cur.execute("""
-            SELECT COALESCE(SUM(amount), 0) AS total_paid
-            FROM payments
-            WHERE pupil_id = %s
-              AND term = %s
-              AND year = %s
-        """, (pupil_id, term, year))
-
-        payment_summary = cur.fetchone()
-
-        total_paid_before = Decimal(
-            str(payment_summary['total_paid'] or 0)
+        balance_before = Decimal(
+            str(pupil.get('fees_balance') or 0)
         )
 
-        remaining_balance = max(
-            fees_total - total_paid_before,
-            Decimal('0')
-        )
+        if balance_before < 0:
+            raise ValueError('The pupil has an invalid fees balance.')
 
-        # =================================================
-        # PREVENT OVERPAYMENT
-        # =================================================
-
-        if amount > remaining_balance:
+        if amount > balance_before:
             raise ValueError(
-                'Payment exceeds the remaining balance. '
-                f'Maximum payable: UGX {remaining_balance:,.2f}.'
+                f'Payment exceeds the outstanding balance of '
+                f'UGX {balance_before:,.2f}.'
             )
 
-        # =================================================
-        # GENERATE RECEIPT AND INSERT PAYMENT
-        # =================================================
-
+        # Generate a receipt number; no PRN or payment request.
         receipt_no = generate_receipt_number()
 
+        # Record the payment.
         cur.execute("""
             INSERT INTO payments (
                 pupil_id,
@@ -7445,6 +7340,7 @@ def bursar_record_payment():
             VALUES (
                 %s, %s, CURRENT_DATE, %s, %s, %s, %s, %s, %s
             )
+            RETURNING id
         """, (
             pupil_id,
             amount,
@@ -7456,64 +7352,20 @@ def bursar_record_payment():
             year
         ))
 
-        # =================================================
-        # RECALCULATE TERM BALANCE
-        # =================================================
+        payment = cur.fetchone()
+        payment_id = payment['id']
 
-        cur.execute("""
-            SELECT COALESCE(SUM(amount), 0) AS total_paid
-            FROM payments
-            WHERE pupil_id = %s
-              AND term = %s
-              AND year = %s
-        """, (pupil_id, term, year))
-
-        payment_summary = cur.fetchone()
-
-        term_paid = Decimal(
-            str(payment_summary['total_paid'] or 0)
-        )
-
-        term_balance = max(
-            fees_total - term_paid,
-            Decimal('0')
-        )
-
-        # =================================================
-        # UPDATE PUPIL FEE FIGURES
-        # =================================================
-        # fees_total and fees_balance represent this term.
-        # fees_paid remains the total across all recorded terms.
-
-        cur.execute("""
-            SELECT COALESCE(SUM(amount), 0) AS all_time_paid
-            FROM payments
-            WHERE pupil_id = %s
-        """, (pupil_id,))
-
-        all_paid_row = cur.fetchone()
-
-        all_time_paid = Decimal(
-            str(all_paid_row['all_time_paid'] or 0)
-        )
-
+        # Update the pupil's stored fees figures immediately.
         cur.execute("""
             UPDATE pupils
             SET
-                fees_total = %s,
-                fees_paid = %s,
-                fees_balance = %s
+                fees_paid = COALESCE(fees_paid, 0) + %s,
+                fees_balance = GREATEST(
+                    COALESCE(fees_balance, 0) - %s,
+                    0
+                )
             WHERE pupil_id = %s
-        """, (
-            fees_total,
-            all_time_paid,
-            term_balance,
-            pupil_id
-        ))
-
-        # =================================================
-        # COMMIT PAYMENT AND BALANCE TOGETHER
-        # =================================================
+        """, (amount, amount, pupil_id))
 
         db.commit()
 
@@ -7528,7 +7380,7 @@ def bursar_record_payment():
         db.rollback()
         app.logger.exception('Failed to record bursar payment.')
         flash(
-            'Could not record payment. Check the server log.',
+            'Payment could not be recorded. Please check the server log.',
             'danger'
         )
         return redirect(
@@ -7539,35 +7391,18 @@ def bursar_record_payment():
         cur.close()
         db.close()
 
-    # =====================================================
-    # SEND SMS AFTER SUCCESSFUL COMMIT
-    # =====================================================
-
-    if pupil.get('parent_phone'):
-        try:
-            send_fee_sms(
-                pupil['parent_phone'],
-                pupil['full_name'],
-                float(amount),
-                float(term_balance)
-            )
-        except Exception:
-            app.logger.exception(
-                'Payment saved, but fee SMS failed.'
-            )
-
     flash(
-        f'Payment recorded successfully. Receipt: {receipt_no}. '
-        f'{term} {year} balance: UGX {term_balance:,.2f}.',
+        f'Payment saved for {pupil["full_name"]}. '
+        f'Receipt: {receipt_no}. '
+        f'New balance: UGX {max(balance_before - amount, Decimal("0")):,.2f}.',
         'success'
     )
 
+    # Open the existing printable receipt page.
     return redirect(
-        url_for(
-            'bursar_pupil_detail',
-            pupil_id=pupil_id
-        )
+        url_for('bursar_print_receipts', ids=str(payment_id))
     )
+
 
 @app.route('/bursar/payment-request/create', methods=['POST'])
 def bursar_create_payment_request():
