@@ -4356,40 +4356,26 @@ def to_number(value):
     return float(value)
     
 
+
 @app.route('/teacher/upload_marks', methods=['GET'])
 def teacher_upload_marks():
+    import re
+    from datetime import datetime
 
     if not check_permission([
-        'classteacher',
-        'subject_teacher',
-        'dos'
+        'classteacher', 'subject_teacher', 'dos'
     ]):
         abort(403)
 
-    import re
-
     teacher_id = session.get('user_id')
-    assignments = get_user_assignments(teacher_id)
-
-    if not assignments:
-        flash('No classes assigned.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    # =====================================================
-    # IDENTIFY NURSERY AND PRIMARY CLASSES
-    # =====================================================
+    assignments = get_user_assignments(teacher_id) or []
 
     def get_level(class_name):
-
         name = re.sub(
-            r'\s+',
-            ' ',
-            (class_name or '').strip()
+            r'\s+', ' ', (class_name or '').strip()
         ).upper()
-
         compact = re.sub(r'[\s.]', '', name)
 
-        # Nursery classes
         if name in {
             'BABY', 'BABY CLASS',
             'MIDDLE', 'MIDDLE CLASS',
@@ -4397,7 +4383,6 @@ def teacher_upload_marks():
         }:
             return 'nursery'
 
-        # Primary 1 to Primary 7, including streams
         if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
             return 'primary'
 
@@ -4409,14 +4394,9 @@ def teacher_upload_marks():
 
         return None
 
-    # =====================================================
-    # FILTER ASSIGNMENTS TO NURSERY AND PRIMARY
-    # =====================================================
-
     filtered_assignments = []
 
     for assignment in assignments:
-
         class_name = (
             assignment.get('class')
             or assignment.get('class_name')
@@ -4426,100 +4406,70 @@ def teacher_upload_marks():
         level = get_level(class_name)
 
         if level:
-            assignment['level'] = level
-            assignment['class_name'] = class_name
-            filtered_assignments.append(assignment)
+            item = dict(assignment)
+            item['class_name'] = class_name
+            item['level'] = level
+            filtered_assignments.append(item)
 
     if not filtered_assignments:
-        flash(
-            'You have no Nursery or Primary classes assigned.',
-            'warning'
-        )
+        flash('No Nursery or Primary classes are assigned to you.', 'warning')
         return redirect(url_for('dashboard'))
 
-    # =====================================================
-    # GET SELECTED CLASS AND SUBJECT
-    # =====================================================
+    assigned_classes = sorted({
+        item['class_name'] for item in filtered_assignments
+    })
 
-    selected_class = request.args.get(
-        'class',
-        ''
+    selected_class = (
+        request.args.get('class')
+        or request.args.get('class_name')
+        or ''
     ).strip()
 
-    selected_subject = request.args.get(
-        'subject',
-        ''
-    ).strip()
+    selected_subject = request.args.get('subject', '').strip()
+    term = request.args.get('term', 'Term 1').strip()
 
-    # Only allow classes present in the teacher's assignments
-    assigned_classes = sorted(set(
-        assignment['class_name']
-        for assignment in filtered_assignments
-    ))
+    try:
+        year = int(request.args.get('year', datetime.now().year))
+    except (TypeError, ValueError):
+        year = datetime.now().year
+
+    if term not in ('Term 1', 'Term 2', 'Term 3'):
+        flash('Please select a valid term.', 'danger')
+        term = 'Term 1'
+
+    if not 2000 <= year <= 2100:
+        year = datetime.now().year
 
     if selected_class and selected_class not in assigned_classes:
-        flash(
-            'You are not assigned to the selected class.',
-            'danger'
-        )
-        return redirect(url_for('teacher_upload_marks'))
+        abort(403)
 
-    # Subjects assigned to the selected class
     if selected_class:
-        available_subjects = sorted(set(
-            (
-                assignment.get('subject')
-                or assignment.get('subject_name')
-                or ''
-            ).strip()
-            for assignment in filtered_assignments
-            if assignment['class_name'] == selected_class
-            and (
-                assignment.get('subject')
-                or assignment.get('subject_name')
-            )
-        ))
+        subject_assignments = [
+            item for item in filtered_assignments
+            if item['class_name'] == selected_class
+        ]
     else:
-        available_subjects = sorted(set(
-            (
-                assignment.get('subject')
-                or assignment.get('subject_name')
-                or ''
-            ).strip()
-            for assignment in filtered_assignments
-            if (
-                assignment.get('subject')
-                or assignment.get('subject_name')
-            )
-        ))
+        subject_assignments = filtered_assignments
+
+    available_subjects = sorted({
+        (item.get('subject') or item.get('subject_name') or '').strip()
+        for item in subject_assignments
+        if (item.get('subject') or item.get('subject_name') or '').strip()
+    })
 
     if selected_subject and selected_subject not in available_subjects:
-        flash(
-            'You are not assigned to the selected subject.',
-            'danger'
-        )
-        return redirect(url_for(
-            'teacher_upload_marks',
-            **({'class': selected_class} if selected_class else {})
-        ))
-
-    # =====================================================
-    # GET PUPILS FOR SELECTED CLASS
-    # =====================================================
+        flash('You are not assigned to that subject for this class.', 'danger')
+        selected_subject = ''
 
     pupils = []
 
-    if selected_class:
-
+    if selected_class and selected_subject:
         db = get_db_dict()
         cur = db.cursor()
 
         try:
             cur.execute("""
-                SELECT
-                    pupil_id,
-                    full_name,
-                    class
+                SELECT pupil_id, full_name, class
                 FROM pupils
                 WHERE class = %s
                 ORDER BY full_name
@@ -4527,28 +4477,34 @@ def teacher_upload_marks():
 
             pupils = cur.fetchall()
 
+            # Load previously saved marks for this class/subject/term/year.
+            cur.execute("""
+                SELECT m.pupil_id, m.final_mark
+                FROM marks m
+                JOIN pupils p ON p.pupil_id = m.pupil_id
+                WHERE p.class = %s
+                  AND m.subject = %s
+                  AND m.term = %s
+                  AND m.year = %s
+            """, (selected_class, selected_subject, term, year))
+
+            saved_marks = {
+                str(row['pupil_id']): row['final_mark']
+                for row in cur.fetchall()
+            }
+
+            for pupil in pupils:
+                pupil['marks_scored'] = saved_marks.get(
+                    str(pupil['pupil_id'])
+                )
+
         finally:
             cur.close()
             db.close()
 
-    # =====================================================
-    # GET CURRENT TERM AND YEAR
-    # =====================================================
-
-    term = request.args.get(
-        'term',
-        'Term 1'
-    ).strip()
-
-    year = request.args.get(
-        'year',
-        datetime.now().year,
-        type=int
-    )
-
-    # =====================================================
-    # RENDER MARKS UPLOAD PAGE
-    # =====================================================
+    session['selected_class'] = selected_class
+    session['selected_term'] = term
+    session['selected_year'] = str(year)
 
     return render_template(
         'teacher/upload_marks.html',
@@ -4564,149 +4520,127 @@ def teacher_upload_marks():
     )
 
 
-@app.route("/save_manual_marks", methods=["POST"])
+@app.route('/save_manual_marks', methods=['POST'])
 def save_manual_marks():
-    if not check_permission(["classteacher", "subject_teacher", "dos"]):
+    if not check_permission([
+        'classteacher', 'subject_teacher', 'dos'
+    ]):
         abort(403)
 
     db = get_db_dict()
-    cursor = db.cursor()
+    cur = db.cursor()
 
     try:
-        subject = request.form.get("subject", "").strip()
-        term = request.form.get("term", "").strip()
-        year_value = request.form.get("year", "").strip()
-        teacher_initials = request.form.get("teacher_initials", "").strip()
-
+        subject = request.form.get('subject', '').strip()
+        term = request.form.get('term', '').strip()
+        teacher_initials = request.form.get(
+            'teacher_initials', ''
+        ).strip()
         class_name = (
-            request.form.get("class_name")
-            or session.get("selected_class")
-            or ""
+            request.form.get('class')
+            or request.form.get('class_name')
+            or session.get('selected_class')
+            or ''
         ).strip()
 
-        # Validate required form fields.
-        if not subject:
-            raise ValueError("Please select a subject.")
-
-        if not term:
-            raise ValueError("Please select a term.")
-
-        if not teacher_initials:
-            raise ValueError("Please enter the teacher's initials.")
-
-        if not year_value:
-            raise ValueError("Please select an academic year.")
-
         try:
-            year = int(year_value)
-        except (ValueError, TypeError):
-            raise ValueError("The academic year must be a valid year.")
+            year = int(request.form.get('year', ''))
+        except (TypeError, ValueError):
+            raise ValueError('Please provide a valid academic year.')
 
-        # Keep the selected information for subsequent page requests.
-        session["selected_class"] = class_name
-        session["selected_term"] = term
-        session["selected_year"] = str(year)
+        if not class_name or not subject or not teacher_initials:
+            raise ValueError('Class, subject and teacher initials are required.')
 
-        pupil_ids = request.form.getlist("pupil_id[]")
-        submitted_marks = request.form.getlist("marks_scored[]")
+        if term not in ('Term 1', 'Term 2', 'Term 3'):
+            raise ValueError('Please select a valid term.')
+
+        if not 2000 <= year <= 2100:
+            raise ValueError('Please provide a valid academic year.')
+
+        pupil_ids = request.form.getlist('pupil_id[]')
+        submitted_marks = request.form.getlist('marks_scored[]')
 
         if not pupil_ids:
-            raise ValueError("No pupils were submitted. Please try again.")
+            raise ValueError('No pupils were submitted.')
 
         def parse_mark(value):
-            value = (value or "").strip()
-
-            # Allow a pupil's mark to be left blank.
-            if value == "":
+            value = (value or '').strip()
+            if not value:
                 return None
 
             try:
                 mark = float(value)
             except (ValueError, TypeError):
-                raise ValueError(
-                    "All marks must be numeric values from 0 to 100."
-                )
+                raise ValueError('Marks must be numeric values from 0 to 100.')
 
             if not 0 <= mark <= 100:
-                raise ValueError(
-                    "Marks must be between 0 and 100."
-                )
+                raise ValueError('Marks must be between 0 and 100.')
 
             return round(mark, 2)
+
+        # Confirm the teacher is assigned to this class and subject.
+        assignments = get_user_assignments(session.get('user_id')) or []
+        authorized = any(
+            (
+                item.get('class') or item.get('class_name') or ''
+            ).strip() == class_name
+            and (
+                item.get('subject') or item.get('subject_name') or ''
+            ).strip() == subject
+            for item in assignments
+        )
+
+        if not authorized:
+            abort(403)
 
         saved_count = 0
         skipped_count = 0
 
         for index, pupil_id_value in enumerate(pupil_ids):
-            # pupil_id is TEXT in your database: do not convert it to int.
-            pupil_id = (pupil_id_value or "").strip()
-
+            pupil_id = (pupil_id_value or '').strip()
             if not pupil_id:
-                raise ValueError("A submitted pupil ID is empty.")
+                raise ValueError('A pupil ID is missing.')
 
-            mark_value = (
+            raw_mark = (
                 submitted_marks[index]
-                if index < len(submitted_marks)
-                else ""
+                if index < len(submitted_marks) else ''
             )
-
-            final_mark = parse_mark(mark_value)
+            final_mark = parse_mark(raw_mark)
 
             if final_mark is None:
                 skipped_count += 1
                 continue
 
-            # Confirm the pupil exists.
-            cursor.execute(
-                """
+            cur.execute("""
                 SELECT pupil_id
                 FROM pupils
-                WHERE pupil_id = %s
-                """,
-                (pupil_id,)
-            )
+                WHERE pupil_id = %s AND class = %s
+            """, (pupil_id, class_name))
 
-            if cursor.fetchone() is None:
+            if cur.fetchone() is None:
                 raise ValueError(
-                    f"Pupil ID {pupil_id} was not found."
+                    f'Pupil {pupil_id} does not belong to {class_name}.'
                 )
 
-            # Find the grading band that contains this mark.
-            cursor.execute(
-                """
+            cur.execute("""
                 SELECT grade, aggregate
                 FROM grading_system
-                WHERE min_score <= %s
-                  AND max_score >= %s
+                WHERE min_score <= %s AND max_score >= %s
                 ORDER BY min_score DESC
                 LIMIT 1
-                """,
-                (final_mark, final_mark)
-            )
+            """, (final_mark, final_mark))
 
-            grading = cursor.fetchone()
+            grading = cur.fetchone()
 
             if grading is None:
                 raise ValueError(
-                    f"No grading band is configured for "
-                    f"the mark {final_mark}. Check your grading system."
+                    f'No grading rule covers the mark {final_mark}.'
                 )
 
-            grade = grading["grade"]
-            aggregate = grading["aggregate"]
-
-            # Insert a new mark or update the existing mark.
-            cursor.execute(
-                """
+            cur.execute("""
                 INSERT INTO marks (
-                    pupil_id,
-                    subject,
-                    term,
-                    year,
-                    final_mark,
-                    grade,
-                    aggregate,
-                    teacher_initials
+                    pupil_id, subject, term, year,
+                    final_mark, grade, aggregate, teacher_initials
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (pupil_id, subject, term, year)
@@ -4715,68 +4649,47 @@ def save_manual_marks():
                     grade = EXCLUDED.grade,
                     aggregate = EXCLUDED.aggregate,
                     teacher_initials = EXCLUDED.teacher_initials
-                """,
-                (
-                    pupil_id,
-                    subject,
-                    term,
-                    year,
-                    final_mark,
-                    grade,
-                    aggregate,
-                    teacher_initials
-                )
-            )
+            """, (
+                pupil_id, subject, term, year,
+                final_mark, grading['grade'],
+                grading['aggregate'], teacher_initials
+            ))
 
             saved_count += 1
 
         if saved_count == 0:
-            raise ValueError(
-                "No marks were saved. Enter at least one pupil's mark."
-            )
+            raise ValueError('No marks were saved. Enter at least one mark.')
 
         db.commit()
 
-        message = f"Successfully saved marks for {saved_count} pupil(s)."
-
+        message = f'Successfully saved marks for {saved_count} pupil(s).'
         if skipped_count:
-            message += (
-                f" {skipped_count} blank mark(s) were skipped."
-            )
+            message += f' {skipped_count} blank mark(s) were skipped.'
 
-        flash(message, "success")
+        flash(message, 'success')
 
-        return redirect(
-            url_for(
-                "teacher_upload_marks",
-                class_name=class_name,
-                term=term,
-                year=year,
-                subject=subject
-            )
-        )
-
-    except ValueError as e:
+    except ValueError as error:
         db.rollback()
-        flash(str(e), "danger")
-
-        return redirect(url_for("teacher_upload_marks"))
+        flash(str(error), 'danger')
 
     except Exception:
         db.rollback()
-        app.logger.exception("Error saving manual marks")
-        flash(
-            "An error occurred while saving marks. "
-            "Please check the server logs.",
-            "danger"
-        )
-
-        return redirect(url_for("teacher_upload_marks"))
+        app.logger.exception('Failed to save manual marks')
+        flash('An error occurred while saving marks. Check the server logs.', 'danger')
 
     finally:
-        cursor.close()
+        cur.close()
         db.close()
 
+    return redirect(url_for(
+        'teacher_upload_marks',
+        **{
+            'class': class_name,
+            'subject': subject,
+            'term': term,
+            'year': year
+        }
+    ))
 
 @app.route('/teacher/report_card/<pupil_id>')
 def teacher_report_card(pupil_id):
