@@ -64,9 +64,10 @@ Pupil Fee Structure
 
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
-                Fee structures are configured for Nursery and Primary classes.
-                Each class can have separate <strong>Day</strong> and
-                <strong>Boarding</strong> fees for each term and academic year.
+                Fee structures are configured for classes available in the
+                pupils database. Each class can have separate
+                <strong>Day</strong> and <strong>Boarding</strong> fees
+                for each term and academic year.
             </div>
 
             <!-- FEE TABLE -->
@@ -134,7 +135,6 @@ Pupil Fee Structure
                                         title="Delete fee structure">
                                         <i class="fas fa-trash"></i>
                                     </button>
-
                                 </form>
                             </td>
                         </tr>
@@ -143,8 +143,8 @@ Pupil Fee Structure
                         <tr>
                             <td colspan="8" class="text-center text-muted py-4">
                                 <i class="fas fa-info-circle"></i>
-                                No Nursery or Primary fee structures have been
-                                configured for {{ term }} {{ year }}.
+                                No fee structures have been configured for
+                                {{ term }} {{ year }}.
                             </td>
                         </tr>
                         {% endfor %}
@@ -185,27 +185,35 @@ Pupil Fee Structure
 
                 <div class="modal-body">
 
-                    <!-- LEVEL -->
+                    <!-- CLASS OPTIONS FROM DATABASE -->
                     <div class="mb-3">
-                        <label class="form-label">Class / Level</label>
+                        <label for="level" class="form-label">
+                            Class / Level
+                        </label>
 
-                        <select name="level" class="form-select" required>
+                        <select
+                            name="level"
+                            id="level"
+                            class="form-select"
+                            required>
+
                             <option value="">Select Class</option>
 
-                            <optgroup label="Nursery">
-                                <option value="Baby">Baby</option>
-                                <option value="Middle">Middle</option>
-                                <option value="Top">Top</option>
-                            </optgroup>
+                            {% for item in classes %}
+                                {% set class_name = item.class_name %}
 
-                            <optgroup label="Primary">
-                                {% for n in range(1, 8) %}
-                                <option value="Primary {{ n }}">
-                                    Primary {{ n }}
+                                <option value="{{ class_name }}">
+                                    {{ class_name }}
                                 </option>
-                                {% endfor %}
-                            </optgroup>
+                            {% endfor %}
+
                         </select>
+
+                        {% if not classes %}
+                        <small class="text-danger">
+                            No classes were found in the pupils database.
+                        </small>
+                        {% endif %}
                     </div>
 
                     <!-- RESIDENCE -->
@@ -243,6 +251,8 @@ Pupil Fee Structure
                                 name="year"
                                 class="form-control"
                                 value="{{ year }}"
+                                min="2000"
+                                max="2100"
                                 required>
                         </div>
 
@@ -282,7 +292,10 @@ Pupil Fee Structure
                         Cancel
                     </button>
 
-                    <button type="submit" class="btn btn-primary">
+                    <button
+                        type="submit"
+                        class="btn btn-primary"
+                        {% if not classes %}disabled{% endif %}>
                         <i class="fas fa-save"></i>
                         Save Fee Structure
                     </button>
