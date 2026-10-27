@@ -6820,6 +6820,7 @@ def bursar_pupil_fee_details(pupil_id):
         )
     )
 
+
 @app.route('/bursar/fees')
 def bursar_fees():
     if not check_permission(['bursar']):
@@ -6858,7 +6859,7 @@ def bursar_fees():
         if name in nursery_order:
             return (0, nursery_order[name], name)
 
-        # Primary 1–7, including variations such as P.1 and P1A
+        # Primary 1–7, including P.1 and P1A variations
         match = re.fullmatch(
             r'PRIMARY\s*([1-7])\s*[A-Z]*',
             name
@@ -6889,6 +6890,20 @@ def bursar_fees():
     cur = db.cursor()
 
     try:
+        # Load actual classes from the pupils table.
+        # These populate the class dropdown in fees.html.
+        cur.execute("""
+            SELECT DISTINCT
+                TRIM("class") AS class_name
+            FROM pupils
+            WHERE "class" IS NOT NULL
+              AND TRIM("class") <> ''
+            ORDER BY class_name
+        """)
+
+        classes = cur.fetchall()
+
+        # Load fee structures for the selected term and year.
         cur.execute("""
             SELECT
                 id,
@@ -6906,11 +6921,13 @@ def bursar_fees():
 
         all_fee_structures = cur.fetchall()
 
+        # Keep only recognized class names.
         fee_structures = [
             fee for fee in all_fee_structures
             if get_level_order(fee.get('level')) is not None
         ]
 
+        # Sort nursery first, followed by Primary 1–7.
         fee_structures.sort(
             key=lambda fee: (
                 get_level_order(fee.get('level')),
@@ -6925,10 +6942,11 @@ def bursar_fees():
     return render_template(
         'bursar/fees.html',
         fee_structures=fee_structures,
+        classes=classes,
         year=year,
         term=term
     )
-    
+
 
 # ADD PUPIL FEE STRUCTURE
 @app.route('/bursar/fees/add', methods=['POST'])
