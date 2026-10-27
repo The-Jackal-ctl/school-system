@@ -5870,6 +5870,7 @@ def print_all_report_cards():
         # ========================================================
 
         def get_class_level(name):
+
             name = re.sub(
                 r'\s+', ' ', (name or '').strip()
             ).upper()
@@ -5877,9 +5878,12 @@ def print_all_report_cards():
             compact = re.sub(r'[\s.]', '', name)
 
             if name in {
-                'BABY', 'BABY CLASS',
-                'MIDDLE', 'MIDDLE CLASS',
-                'TOP', 'TOP CLASS'
+                'BABY',
+                'BABY CLASS',
+                'MIDDLE',
+                'MIDDLE CLASS',
+                'TOP',
+                'TOP CLASS'
             }:
                 return 'nursery'
 
@@ -5925,13 +5929,15 @@ def print_all_report_cards():
 
         term = (
             report_settings['current_term']
-            if report_settings and report_settings['current_term']
+            if report_settings
+            and report_settings['current_term']
             else 'Term 1'
         )
 
         year = (
             report_settings['current_year']
-            if report_settings and report_settings['current_year']
+            if report_settings
+            and report_settings['current_year']
             else datetime.now().year
         )
 
@@ -6041,7 +6047,8 @@ def print_all_report_cards():
             )
 
             # ====================================================
-            # GET BOT, MOT AND EOT MARKS
+            # GET SAVED SUBJECT MARKS
+            # Consistent with teacher_report_card()
             # ====================================================
 
             cur.execute(
@@ -6069,25 +6076,17 @@ def print_all_report_cards():
             marks = []
 
             # ====================================================
-            # CALCULATE SUBJECT RESULTS
+            # PREPARE SUBJECT RESULTS
             # ====================================================
 
             for m in raw_marks:
 
-                marks_scored = m['marks_scored']
-
-                entered_scores = [
-                    float(score)
-                    for score in (marks_scored)
-                    if score is not None and score != ''
-                ]
-
-                # Skip subjects with no marks entered.
-                if not entered_scores:
+                # Skip subjects without a saved final mark.
+                if m['final_mark'] is None:
                     continue
 
-                # Average the entered BOT, MOT and EOT marks.
-                final_mark = round(marks_scored,
+                final_mark = round(
+                    float(m['final_mark']),
                     2
                 )
 
@@ -6096,12 +6095,11 @@ def print_all_report_cards():
                     'final_mark': final_mark,
                     'grade': m['grade'],
                     'aggregate': m['aggregate'],
-		    'comment':m['comment'],
                     'teacher_initials': m['teacher_initials']
                 })
 
             # ====================================================
-            # GENERAL AVERAGE
+            # CALCULATE REPORT TOTALS
             # ====================================================
 
             valid_marks = [
@@ -6113,13 +6111,16 @@ def print_all_report_cards():
                 m['final_mark']
                 for m in valid_marks
             )
-            full_marks_total = sum(m['full_marks'])
+
             subject_count = len(valid_marks)
-            total_aggregate = sum(m['aggregate'])
-            
+
+            total_aggregate = sum(
+                m['aggregate'] or 0
+                for m in valid_marks
+            )
 
             # ====================================================
-            # ADD REPORT
+            # ADD PUPIL REPORT
             # ====================================================
 
             reports.append({
@@ -6128,14 +6129,10 @@ def print_all_report_cards():
                 'class_name': pupil_class,
                 'lin': lin,
                 'photo_url': photo_url,
-
                 'marks': marks,
-
                 'total_marks': round(total_marks, 2),
                 'subject_count': subject_count,
-                'aggregate': aggregate,
-		'comment': comment
-
+                'aggregate': total_aggregate
             })
 
         # ========================================================
@@ -6144,28 +6141,24 @@ def print_all_report_cards():
 
         return render_template(
             'teacher/print_all_report_cards_primary.html',
-
             reports=reports,
-
             class_name=class_name,
             term=term,
             year=year,
-
             school_name=school_name,
             school_address=school_address,
             school_phone=school_phone,
             school_email=school_email,
             school_logo_url=school_logo_url,
-
             next_term_begins=next_term_begins,
             next_term_ends=next_term_ends,
-
             stamp_url=stamp_url
         )
 
     finally:
         cur.close()
         db.close()
+
 
 @app.route('/bursar/dashboard')
 def bursar_dashboard():
