@@ -33,23 +33,38 @@ Pupil Fee Structure
             <form method="GET" class="row g-3 mb-4">
 
                 <div class="col-md-4">
-                    <label class="form-label">Academic Year</label>
+                    <label for="filter-year" class="form-label">
+                        Academic Year
+                    </label>
                     <input
                         type="number"
+                        id="filter-year"
                         name="year"
                         value="{{ year }}"
+                        min="2000"
+                        max="2100"
                         class="form-control"
                         required>
                 </div>
 
                 <div class="col-md-4">
-                    <label class="form-label">Term</label>
-                    <select name="term" class="form-select">
+                    <label for="filter-term" class="form-label">
+                        Term
+                    </label>
+                    <select
+                        id="filter-term"
+                        name="term"
+                        class="form-select"
+                        required>
+
                         {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
-                        <option value="{{ t }}" {% if term == t %}selected{% endif %}>
+                        <option
+                            value="{{ t }}"
+                            {% if term == t %}selected{% endif %}>
                             {{ t }}
                         </option>
                         {% endfor %}
+
                     </select>
                 </div>
 
@@ -135,6 +150,7 @@ Pupil Fee Structure
                                         title="Delete fee structure">
                                         <i class="fas fa-trash"></i>
                                     </button>
+
                                 </form>
                             </td>
                         </tr>
@@ -163,13 +179,14 @@ Pupil Fee Structure
     class="modal fade"
     id="addFeeModal"
     tabindex="-1"
+    aria-labelledby="addFeeModalLabel"
     aria-hidden="true">
 
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
 
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">
+                <h5 class="modal-title" id="addFeeModalLabel">
                     <i class="fas fa-money-bill-wave"></i>
                     Add Pupil Fee Structure
                 </h5>
@@ -177,15 +194,18 @@ Pupil Fee Structure
                 <button
                     type="button"
                     class="btn-close btn-close-white"
-                    data-bs-dismiss="modal">
+                    data-bs-dismiss="modal"
+                    aria-label="Close">
                 </button>
             </div>
 
-            <form method="POST" action="{{ url_for('bursar_fees_add') }}">
+            <form
+                method="POST"
+                action="{{ url_for('bursar_fees_add') }}">
 
                 <div class="modal-body">
 
-                    <!-- CLASS OPTIONS FROM DATABASE -->
+                    <!-- DYNAMIC CLASS OPTIONS FROM DATABASE -->
                     <div class="mb-3">
                         <label for="level" class="form-label">
                             Class / Level
@@ -200,11 +220,9 @@ Pupil Fee Structure
                             <option value="">Select Class</option>
 
                             {% for item in classes %}
-                                {% set class_name = item.class_name %}
-
-                                <option value="{{ class_name }}">
-                                    {{ class_name }}
-                                </option>
+                            <option value="{{ item.class_name }}">
+                                {{ item.class_name }}
+                            </option>
                             {% endfor %}
 
                         </select>
@@ -212,18 +230,28 @@ Pupil Fee Structure
                         {% if not classes %}
                         <small class="text-danger">
                             No classes were found in the pupils database.
+                            Add pupils with a class assigned before creating
+                            fee structures.
                         </small>
                         {% endif %}
                     </div>
 
                     <!-- RESIDENCE -->
                     <div class="mb-3">
-                        <label class="form-label">Residence</label>
+                        <label for="residence" class="form-label">
+                            Residence
+                        </label>
 
-                        <select name="residence" class="form-select" required>
+                        <select
+                            name="residence"
+                            id="residence"
+                            class="form-select"
+                            required>
+
                             <option value="">Select Residence</option>
                             <option value="Day">Day</option>
                             <option value="Boarding">Boarding</option>
+
                         </select>
                     </div>
 
@@ -231,24 +259,37 @@ Pupil Fee Structure
 
                         <!-- TERM -->
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Term</label>
+                            <label for="fee-term" class="form-label">
+                                Term
+                            </label>
 
-                            <select name="term" class="form-select" required>
+                            <select
+                                name="term"
+                                id="fee-term"
+                                class="form-select"
+                                required>
+
                                 {% for t in ['Term 1', 'Term 2', 'Term 3'] %}
-                                <option value="{{ t }}" {% if term == t %}selected{% endif %}>
+                                <option
+                                    value="{{ t }}"
+                                    {% if term == t %}selected{% endif %}>
                                     {{ t }}
                                 </option>
                                 {% endfor %}
+
                             </select>
                         </div>
 
                         <!-- YEAR -->
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Academic Year</label>
+                            <label for="fee-year" class="form-label">
+                                Academic Year
+                            </label>
 
                             <input
                                 type="number"
                                 name="year"
+                                id="fee-year"
                                 class="form-control"
                                 value="{{ year }}"
                                 min="2000"
@@ -260,23 +301,30 @@ Pupil Fee Structure
 
                     <!-- AMOUNT -->
                     <div class="mb-3">
-                        <label class="form-label">Fee Amount (UGX)</label>
+                        <label for="amount" class="form-label">
+                            Fee Amount (UGX)
+                        </label>
 
                         <input
                             type="number"
                             name="amount"
+                            id="amount"
                             class="form-control"
-                            min="0"
+                            min="0.01"
                             step="0.01"
+                            placeholder="Enter fee amount"
                             required>
                     </div>
 
                     <!-- DESCRIPTION -->
                     <div class="mb-3">
-                        <label class="form-label">Description</label>
+                        <label for="description" class="form-label">
+                            Description
+                        </label>
 
                         <textarea
                             name="description"
+                            id="description"
                             class="form-control"
                             rows="3"
                             placeholder="Optional description"></textarea>
@@ -285,6 +333,7 @@ Pupil Fee Structure
                 </div>
 
                 <div class="modal-footer">
+
                     <button
                         type="button"
                         class="btn btn-secondary"
@@ -299,6 +348,7 @@ Pupil Fee Structure
                         <i class="fas fa-save"></i>
                         Save Fee Structure
                     </button>
+
                 </div>
 
             </form>
