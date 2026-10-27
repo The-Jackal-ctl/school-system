@@ -269,6 +269,10 @@ def init_db():
             UNIQUE (pupil_id, subject, term, year)
         )
     """)
+	cursor.execute("""
+	    ALTER TABLE marks
+	    ADD COLUMN IF NOT EXISTS comment TEXT
+	""")
     # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
@@ -4486,122 +4490,121 @@ def teacher_upload_marks():
         assessment_types=['BOT', 'MOT', 'EOT']
     )
 
+
 @app.route("/save_manual_marks", methods=["POST"])
 def save_manual_marks():
-    if not check_permission(['classteacher', 'subject_teacher', 'dos']):
+    if not check_permission(["classteacher", "subject_teacher", "dos"]):
         abort(403)
 
     db = get_db_dict()
     cursor = db.cursor()
 
     try:
-        subject = request.form.get('subject', '').strip()
-        term = request.form.get('term', '').strip()
-        year = request.form.get('year', '').strip()
-        teacher_initials = request.form.get('teacher_initials', '').strip()
+        subject = request.form.get("subject", "").strip()
+        term = request.form.get("term", "").strip()
+        year_value = request.form.get("year", "").strip()
+        teacher_initials = request.form.get("teacher_initials", "").strip()
+
         class_name = (
-            request.form.get('class_name')
-            or session.get('selected_class')
-            or ''
+            request.form.get("class_name")
+            or session.get("selected_class")
+            or ""
         ).strip()
 
-        if term not in ['Term 1', 'Term 2', 'Term 3']:
-            raise ValueError('Please select a valid term.')
-
+        # Validate required form fields.
         if not subject:
-            raise ValueError('Please select a subject.')
+            raise ValueError("Please select a subject.")
+
+        if not term:
+            raise ValueError("Please select a term.")
 
         if not teacher_initials:
-            raise ValueError('Please enter teacher initials.')
+            raise ValueError("Please enter the teacher's initials.")
+
+        if not year_value:
+            raise ValueError("Please select an academic year.")
 
         try:
-            year = int(year)
+            year = int(year_value)
         except (ValueError, TypeError):
-            raise ValueError('Please enter a valid year.')
+            raise ValueError("The academic year must be a valid year.")
 
-        if not 2000 <= year <= 2100:
-            raise ValueError('Please enter a valid year.')
+        # Keep the selected information for subsequent page requests.
+        session["selected_class"] = class_name
+        session["selected_term"] = term
+        session["selected_year"] = str(year)
 
-        # Identify Nursery or Primary.
-        def get_level(name):
-            name = re.sub(r'\s+', ' ', (name or '').strip()).upper()
-            compact = re.sub(r'[\s.]', '', name)
+        pupil_ids = request.form.getlist("pupil_id[]")
+        submitted_marks = request.form.getlist("marks_scored[]")
 
-            if name in {
-                'BABY', 'BABY CLASS',
-                'MIDDLE', 'MIDDLE CLASS',
-                'TOP', 'TOP CLASS'
-            }:
-                return 'nursery'
-
-            if re.fullmatch(r'PRIMARY\s*[1-7]\s*[A-Z]*', name):
-                return 'primary'
-
-            if re.fullmatch(r'P\.?\s*[1-7]\s*[A-Z]*', name):
-                return 'primary'
-
-            if re.fullmatch(r'P[1-7][A-Z]*', compact):
-                return 'primary'
-
-            return None
-
-        level = get_level(class_name)
-
-        if level not in ('nursery', 'primary'):
-            raise ValueError(
-                'Only Nursery and Primary classes are allowed.'
-            )
-
-        session['selected_class'] = class_name
-        session['selected_term'] = term
-        session['selected_year'] = year
-
-        pupil_ids = request.form.getlist('pupil_id[]')
-
-     	# Only EOT marks are entered.
-        marks_scored = request.form.getlist('marks_scored[]')
         if not pupil_ids:
-            raise ValueError('No pupils were submitted.')
+            raise ValueError("No pupils were submitted. Please try again.")
 
         def parse_mark(value):
-            value = (value or '').strip()
+            value = (value or "").strip()
 
-            if value == '':
+            # Allow a pupil's mark to be left blank.
+            if value == "":
                 return None
 
             try:
                 mark = float(value)
             except (ValueError, TypeError):
                 raise ValueError(
-                    'All EOT marks must be numeric values from 0 to 100.'
+                    "All marks must be numeric values from 0 to 100."
                 )
 
             if not 0 <= mark <= 100:
-                raise ValueError('EOT marks must be between 0 and 100.')
+                raise ValueError(
+                    "Marks must be between 0 and 100."
+                )
 
-                return round(mark, 2)
+            return round(mark, 2)
 
-        for i, pupil_id in enumerate(pupil_ids):
-            try:
-                pupil_id = int(pupil_id)
-            except (ValueError, TypeError):
-                raise ValueError('Invalid pupil ID.')
+        saved_count = 0
+        skipped_count = 0
 
-            marks_scored = parse_mark(
-                marks_scored[i] if i < len(marks_scored) else ''
+        for index, pupil_id_value in enumerate(pupil_ids):
+            # pupil_id is TEXT in your database: do not convert it to int.
+            pupil_id = (pupil_id_value or "").strip()
+
+            if not pupil_id:
+                raise ValueError("A submitted pupil ID is empty.")
+
+            mark_value = (
+                submitted_marks[index]
+                if index < len(submitted_marks)
+                else ""
             )
 
-            # Skip pupils whose EOT mark was left blank.
-            if marks_scored is None:
+            final_mark = parse_mark(mark_value)
+
+            if final_mark is None:
+                skipped_count += 1
                 continue
 
-            # For EOT-only entry, the EOT mark is the final mark.
-            final_mark = marks_scored
+            # Confirm the pupil exists.
+            cursor.execute(
+                """
+                SELECT pupil_id
+                FROM pupils
+                WHERE pupil_id = %s
+                """,
+                (pupil_id,)
+            )
 
+            if cursor.fetchone() is None:
+                raise ValueError(
+                    f"Pupil ID {pupil_id} was not found."
+                )
+
+            # Find the grading band that contains this mark.
             cursor.execute(
                 """
                 SELECT grade, aggregate, comment
                 FROM grading_system
+                WHERE min_score <= %s
+                  AND max_score >= %s
                 ORDER BY min_score DESC
                 LIMIT 1
                 """,
@@ -4610,53 +4613,73 @@ def save_manual_marks():
 
             grading = cursor.fetchone()
 
-            grade = grading['grade'] if grading else None
-            aggregate = grading['aggregate'] if grading else None
-            comment = grading['comment']
+            if grading is None:
+                raise ValueError(
+                    f"No grading band is configured for "
+                    f"the mark {final_mark}. Check your grading system."
+                )
+
+            grade = grading["grade"]
+            aggregate = grading["aggregate"]
+            comment = grading["comment"]
+
+            # Insert a new mark or update the existing mark.
             cursor.execute(
                 """
                 INSERT INTO marks (
                     pupil_id,
                     subject,
+                    term,
+                    year,
                     final_mark,
                     grade,
                     aggregate,
-	            comment,
-                    teacher_initials,
-                    term,
-                    year
+                    comment,
+                    teacher_initials
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s %s, %s,)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (pupil_id, subject, term, year)
                 DO UPDATE SET
                     final_mark = EXCLUDED.final_mark,
                     grade = EXCLUDED.grade,
                     aggregate = EXCLUDED.aggregate,
-                    comment= EXCLUDED.comment,
+                    comment = EXCLUDED.comment,
                     teacher_initials = EXCLUDED.teacher_initials
                 """,
                 (
                     pupil_id,
                     subject,
+                    term,
+                    year,
                     final_mark,
                     grade,
                     aggregate,
-	            comment,
-                    teacher_initials,
-                    term,
-                    year
+                    comment,
+                    teacher_initials
                 )
             )
+
+            saved_count += 1
+
+        if saved_count == 0:
+            raise ValueError(
+                "No marks were saved. Enter at least one pupil's mark."
+            )
+
         db.commit()
 
-        flash(
-            f'Primary/Nursery marks for {term} {year} saved successfully.',
-            'success'
-        )
+        message = f"Successfully saved marks for {saved_count} pupil(s)."
+
+        if skipped_count:
+            message += (
+                f" {skipped_count} blank mark(s) were skipped."
+            )
+
+        flash(message, "success")
 
         return redirect(
             url_for(
-                'teacher_upload_marks',
+                "teacher_upload_marks",
                 class_name=class_name,
                 term=term,
                 year=year,
@@ -4666,21 +4689,25 @@ def save_manual_marks():
 
     except ValueError as e:
         db.rollback()
-        flash(str(e), 'danger')
-        return redirect(url_for('teacher_upload_marks'))
+        flash(str(e), "danger")
+
+        return redirect(url_for("teacher_upload_marks"))
 
     except Exception:
         db.rollback()
-        app.logger.exception('Failed to save manual marks.')
+        app.logger.exception("Error saving manual marks")
         flash(
-            'Unable to save marks. Check your marks table columns and server logs.',
-            'danger'
+            "An error occurred while saving marks. "
+            "Please check the server logs.",
+            "danger"
         )
-        return redirect(url_for('teacher_upload_marks'))
+
+        return redirect(url_for("teacher_upload_marks"))
 
     finally:
         cursor.close()
         db.close()
+
 
 @app.route('/teacher/report_card/<pupil_id>')
 def teacher_report_card(pupil_id):
