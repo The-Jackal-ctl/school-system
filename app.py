@@ -269,10 +269,7 @@ def init_db():
             UNIQUE (pupil_id, subject, term, year)
         )
     """)
-	cursor.execute("""
-	    ALTER TABLE marks
-	    ADD COLUMN IF NOT EXISTS comment TEXT
-	""")
+	
     # GRADING SYSTEM
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS grading_system (
@@ -3310,6 +3307,7 @@ def dos_promote():
 
 
 
+
 @app.route('/grading', methods=['GET', 'POST'])
 def grading():
     from flask import flash, redirect, render_template, request, url_for
@@ -3325,10 +3323,15 @@ def grading():
         if not file or not file.filename.lower().endswith('.xlsx'):
             flash('Please upload a valid .xlsx Excel file.', 'danger')
             cur.close()
+            db.close()
             return redirect(url_for('grading'))
 
+        workbook = None
+
         try:
-            workbook = load_workbook(file, read_only=True, data_only=True)
+            workbook = load_workbook(
+                file, read_only=True, data_only=True
+            )
             sheet = workbook.active
             rows = sheet.iter_rows(values_only=True)
             headers = next(rows, None)
@@ -3340,73 +3343,143 @@ def grading():
                 str(value).strip().lower() if value is not None else ''
                 for value in headers
             ]
-            required = ['min_score', 'max_score', 'grade', 'aggregate']
+
+            required = [
+                'min_score', 'max_score', 'grade', 'aggregate'
+            ]
 
             if not all(column in headers for column in required):
                 raise ValueError(
                     'Excel headers must include: min_score, max_score, '
-                    'grade, aggregate.'
+                    'grade, aggregate. You may also include comment.'
                 )
 
-            indexes = {name: headers.index(name) for name in required}
+            indexes = {
+                name: headers.index(name)
+                for name in required
+            }
+            comment_index = (
+                headers.index('comment')
+                if 'comment' in headers
+                else None
+            )
+
             rules = []
 
-            for row in rows:
+            for row_number, row in enumerate(rows, start=2):
                 if not row or all(value is None for value in row):
                     continue
 
-                minimum = Decimal(str(row[indexes['min_score']]))
-                maximum = Decimal(str(row[indexes['max_score']]))
-                grade = str(row[indexes['grade']]).strip()
-                aggregate = int(row[indexes['aggregate']])
+                try:
+                    minimum = Decimal(
+                        str(row[indexes['min_score']])
+                    )
+                    maximum = Decimal(
+                        str(row[indexes['max_score']])
+                    )
 
-                if minimum < 0 or maximum > 100 or minimum > maximum:
-                    raise ValueError('Scores must be between 0 and 100.')
-                if not grade:
-                    raise ValueError('A grade cannot be blank.')
-                if aggregate < 1:
-                    raise ValueError('Aggregates must be positive.')
+                    grade_value = row[indexes['grade']]
+                    aggregate_value = row[indexes['aggregate']]
 
-                rules.append((minimum, maximum, grade, aggregate))
+                    if grade_value is None or not str(grade_value).strip():
+                        raise ValueError('Grade cannot be blank.')
+
+                    if aggregate_value is None:
+                        raise ValueError('Aggregate cannot be blank.')
+
+                    grade = str(grade_value).strip()
+                    aggregate_decimal = Decimal(str(aggregate_value))
+
+                    if not aggregate_decimal.is_finite():
+                        raise ValueError('Aggregate must be a valid number.')
+
+                    if aggregate_decimal != aggregate_decimal.to_integral_value():
+                        raise ValueError('Aggregate must be a whole number.')
+
+                    aggregate = int(aggregate_decimal)
+
+                    if not minimum.is_finite() or not maximum.is_finite():
+                        raise ValueError('Scores must be valid numbers.')
+
+                    if minimum < 0 or maximum > 100 or minimum > maximum:
+                        raise ValueError(
+                            'Scores must be between 0 and 100, '
+                            'with minimum not exceeding maximum.'
+                        )
+
+                    if aggregate < 1:
+                        raise ValueError('Aggregates must be positive.')
+
+                    comment = None
+                    if comment_index is not None:
+                        comment_value = row[comment_index]
+                        if comment_value is not None:
+                            comment = str(comment_value).strip() or None
+
+                    rules.append((
+                        minimum, maximum, grade, aggregate, comment
+                    ))
+
+                except (InvalidOperation, ValueError, TypeError) as error:
+                    raise ValueError(
+                        f'Invalid data on Excel row {row_number}: {error}'
+                    ) from error
 
             if not rules:
-                raise ValueError('No grading rules were found in the file.')
+                raise ValueError(
+                    'No grading rules were found in the file.'
+                )
 
             rules.sort(key=lambda item: item[0])
 
             for previous, current in zip(rules, rules[1:]):
                 if current[0] <= previous[1]:
-                    raise ValueError('The score ranges overlap.')
+                    raise ValueError(
+                        'The score ranges overlap. Check your Excel file.'
+                    )
 
+            # Replace the rules only after the complete file is validated.
             cur.execute('DELETE FROM grading_system')
+
             cur.executemany(
                 """
                 INSERT INTO grading_system
-                    (min_score, max_score, grade, aggregate)
-                VALUES (%s, %s, %s, %s)
+                    (min_score, max_score, grade, aggregate, comment)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 rules
             )
+
             db.commit()
             flash('Grading rules uploaded successfully.', 'success')
 
         except Exception as error:
             db.rollback()
+            app.logger.exception('Grading rules upload failed')
             flash(f'Upload failed: {error}', 'danger')
+
         finally:
+            if workbook is not None:
+                workbook.close()
             cur.close()
+            db.close()
 
         return redirect(url_for('grading'))
 
-    cur.execute("""
-        SELECT min_score, max_score, grade, aggregate
-        FROM grading_system
-        ORDER BY min_score DESC
-    """)
-    rules = cur.fetchall()
-    cur.close()
+    try:
+        cur.execute("""
+            SELECT min_score, max_score, grade, aggregate, comment
+            FROM grading_system
+            ORDER BY min_score DESC
+        """)
+        rules = cur.fetchall()
+
+    finally:
+        cur.close()
+        db.close()
 
     return render_template('grading.html', rules=rules)
+
 
 
 
@@ -4601,7 +4674,7 @@ def save_manual_marks():
             # Find the grading band that contains this mark.
             cursor.execute(
                 """
-                SELECT grade, aggregate, comment
+                SELECT grade, aggregate
                 FROM grading_system
                 WHERE min_score <= %s
                   AND max_score >= %s
@@ -4621,7 +4694,6 @@ def save_manual_marks():
 
             grade = grading["grade"]
             aggregate = grading["aggregate"]
-            comment = grading["comment"]
 
             # Insert a new mark or update the existing mark.
             cursor.execute(
@@ -4634,16 +4706,14 @@ def save_manual_marks():
                     final_mark,
                     grade,
                     aggregate,
-                    comment,
                     teacher_initials
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (pupil_id, subject, term, year)
                 DO UPDATE SET
                     final_mark = EXCLUDED.final_mark,
                     grade = EXCLUDED.grade,
                     aggregate = EXCLUDED.aggregate,
-                    comment = EXCLUDED.comment,
                     teacher_initials = EXCLUDED.teacher_initials
                 """,
                 (
@@ -4654,7 +4724,6 @@ def save_manual_marks():
                     final_mark,
                     grade,
                     aggregate,
-                    comment,
                     teacher_initials
                 )
             )
