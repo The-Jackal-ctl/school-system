@@ -5088,7 +5088,7 @@ def teacher_report_card(pupil_id):
             # ================================================
 
             return render_template(
-                'teacher/report_card_primary.html',
+                'teacher/report_card.html',
                 pupil_id=pupil_id,
                 full_name=full_name,
                 class_name=class_name,
