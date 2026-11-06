@@ -6170,6 +6170,112 @@ def bursar_pupils():
     
         residence_filter=residence_filter
     )
+
+from decimal import Decimal, InvalidOperation
+from flask import request, redirect, url_for, flash, abort, session
+
+@app.route('/bursar/pupils/update-fees-paid', methods=['POST'])
+def bursar_update_fees_paid():
+
+    if not check_permission(['bursar']):
+        abort(403)
+
+    pupil_id = request.form.get('pupil_id', '').strip()
+    fees_paid_input = request.form.get('fees_paid', '').strip()
+    reason = request.form.get('reason', '').strip()
+
+    if not pupil_id or not fees_paid_input or not reason:
+        flash('All fields are required.', 'danger')
+        return redirect(url_for('bursar_pupils'))
+
+    try:
+        new_paid = Decimal(fees_paid_input)
+
+        if not new_paid.is_finite() or new_paid < 0:
+            raise ValueError()
+
+        if new_paid.as_tuple().exponent < -2:
+            raise ValueError()
+
+    except (InvalidOperation, ValueError):
+        flash('Invalid fees paid amount.', 'danger')
+        return redirect(url_for('bursar_pupils'))
+
+    db = get_db_dict()
+    cur = db.cursor()
+
+    try:
+
+        cur.execute("""
+            SELECT pupil_id, fees_total, fees_paid, fees_balance
+            FROM pupils
+            WHERE pupil_id = %s
+            FOR UPDATE
+        """, (pupil_id,))
+
+        pupil = cur.fetchone()
+
+        if not pupil:
+            db.rollback()
+            flash('Pupil not found.', 'danger')
+            return redirect(url_for('bursar_pupils'))
+
+        total = Decimal(str(pupil['fees_total'] or 0))
+        old_paid = Decimal(str(pupil['fees_paid'] or 0))
+        old_balance = Decimal(str(pupil['fees_balance'] or 0))
+
+        if new_paid > total:
+            db.rollback()
+            flash('Fees paid cannot exceed total fees.', 'danger')
+            return redirect(url_for('bursar_pupils'))
+
+        new_balance = total - new_paid
+
+        cur.execute("""
+            UPDATE pupils
+            SET fees_paid = %s,
+                fees_balance = %s
+            WHERE pupil_id = %s
+        """, (new_paid, new_balance, pupil_id))
+
+        cur.execute("""
+            INSERT INTO fee_adjustments (
+                pupil_id,
+                old_fees_paid,
+                new_fees_paid,
+                old_balance,
+                new_balance,
+                reason,
+                adjusted_by
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            pupil_id,
+            old_paid,
+            new_paid,
+            old_balance,
+            new_balance,
+            reason,
+            str(session.get('username') or session.get('user_id') or 'bursar')
+        ))
+
+        db.commit()
+
+        flash(
+            f'Fees updated successfully. New balance: UGX {new_balance:,.2f}',
+            'success'
+        )
+
+    except Exception:
+        db.rollback()
+        app.logger.exception("Fee adjustment failed")
+        flash('Failed to update pupil fees.', 'danger')
+
+    finally:
+        cur.close()
+        db.close()
+
+    return redirect(url_for('bursar_pupils'))
 # =========================================================
 # BURSAR - PUPIL FEE CLASSIFICATION
 # =========================================================
