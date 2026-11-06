@@ -97,6 +97,7 @@
                         <th>Residence</th>
                         <th>Total Fees (UGX)</th>
                         <th>Paid (UGX)</th>
+                        <th>Edit Fees</th>
                         <th>Balance (UGX)</th>
                         <th>Parent Phone</th>
                         <th>Actions</th>
@@ -147,8 +148,22 @@
                             {{ "{:,.2f}".format(total) }}
                         </td>
 
-                        <td class="text-end text-success">
+                        <td class="text-end text-success fw-bold">
                             {{ "{:,.2f}".format(paid) }}
+                        </td>
+                        
+                        <td class="text-center">
+                            <button type="button"
+                                    class="btn btn-primary btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#editFeesModal"
+                                    data-pupil-id="{{ s.pupil_id }}"
+                                    data-pupil-name="{{ s.full_name }}"
+                                    data-fees-total="{{ total }}"
+                                    data-fees-paid="{{ paid }}">
+                        
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
                         </td>
 
                         <td class="text-end">
@@ -231,13 +246,204 @@
 
     </div>
 </div>
+<!-- EDIT FEES MODAL -->
 
+<div class="modal fade"
+     id="editFeesModal"
+     tabindex="-1"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <form method="POST"
+                  action="{{ url_for('bursar_update_fees_paid') }}">
+
+                <!-- CSRF token here if your app uses Flask-WTF -->
+
+                <div class="modal-header bg-primary text-white">
+
+                    <h5 class="modal-title">
+                        <i class="fas fa-edit"></i>
+                        Edit Pupil Fees Paid
+                    </h5>
+
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            data-bs-dismiss="modal">
+                    </button>
+
+                </div>
+
+                <div class="modal-body">
+
+                    <input type="hidden"
+                           name="pupil_id"
+                           id="edit_pupil_id">
+
+                    <div class="alert alert-info">
+
+                        <strong>Pupil:</strong>
+                        <span id="edit_pupil_name"></span>
+
+                        <br>
+
+                        <strong>Pupil ID:</strong>
+                        <span id="edit_pupil_number"></span>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+                            Total Fees (UGX)
+                        </label>
+
+                        <input type="text"
+                               id="edit_fees_total"
+                               class="form-control"
+                               readonly>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-bold">
+                            New Fees Paid (UGX)
+                        </label>
+
+                        <input type="number"
+                               name="fees_paid"
+                               id="edit_fees_paid"
+                               class="form-control"
+                               min="0"
+                               step="0.01"
+                               required>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+                            New Fees Balance (UGX)
+                        </label>
+
+                        <input type="text"
+                               id="edit_fees_balance"
+                               class="form-control"
+                               readonly>
+
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+
+                    <button type="submit"
+                            class="btn btn-primary">
+
+                        <i class="fas fa-save"></i>
+                        Save Changes
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
 <script>
 function toggleAll(source) {
     document.querySelectorAll('.pupil-checkbox').forEach(function(checkbox) {
         checkbox.checked = source.checked;
     });
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+
+    const modal = document.getElementById('editFeesModal');
+
+    if (!modal) return;
+
+    const pupilId = document.getElementById('edit_pupil_id');
+    const pupilName = document.getElementById('edit_pupil_name');
+    const pupilNumber = document.getElementById('edit_pupil_number');
+
+    const totalInput = document.getElementById('edit_fees_total');
+    const paidInput = document.getElementById('edit_fees_paid');
+    const balanceInput = document.getElementById('edit_fees_balance');
+
+    let currentTotal = 0;
+
+    function formatMoney(value) {
+        return Number(value).toLocaleString('en-UG', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    modal.addEventListener('show.bs.modal', function(event) {
+
+        const button = event.relatedTarget;
+
+        const id = button.dataset.pupilId;
+        const name = button.dataset.pupilName;
+
+        currentTotal = Number(button.dataset.feesTotal);
+        const paid = Number(button.dataset.feesPaid);
+
+        pupilId.value = id;
+        pupilName.textContent = name;
+        pupilNumber.textContent = id;
+
+        totalInput.value = formatMoney(currentTotal);
+
+        paidInput.value = paid.toFixed(2);
+
+        balanceInput.value = formatMoney(currentTotal - paid);
+
+    });
+
+    paidInput.addEventListener('input', function() {
+
+        const paid = Number(this.value);
+
+        if (this.value === '' || !Number.isFinite(paid)) {
+            balanceInput.value = '';
+            return;
+        }
+
+        balanceInput.value = formatMoney(currentTotal - paid);
+
+    });
+
+    modal.querySelector('form').addEventListener('submit', function(event) {
+
+        const paid = Number(paidInput.value);
+
+        if (!Number.isFinite(paid) || paid < 0 || paid > currentTotal) {
+
+            event.preventDefault();
+
+            alert('Fees paid must be between zero and total fees.');
+
+            return;
+        }
+
+    });
+
+});    
 </script>
 
 {% endblock %}
