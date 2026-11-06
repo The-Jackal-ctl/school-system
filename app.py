@@ -523,7 +523,17 @@ def init_db():
         )
     """)
 
-
+    cursor.execute("""CREATE TABLE IF NOT EXISTS fee_adjustments (
+		    adjustment_id SERIAL PRIMARY KEY,
+		    pupil_id VARCHAR(100) NOT NULL,
+		    old_fees_paid NUMERIC(12,2) NOT NULL,
+		    new_fees_paid NUMERIC(12,2) NOT NULL,
+		    old_balance NUMERIC(12,2) NOT NULL,
+		    new_balance NUMERIC(12,2) NOT NULL,
+		    reason TEXT NOT NULL,
+		    adjusted_by VARCHAR(150),
+		    adjusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);""")
     # INVENTORY ITEMS
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS inventory_items (
